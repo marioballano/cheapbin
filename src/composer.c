@@ -82,13 +82,20 @@ static int ev_cmp(const void *a, const void *b)
 static void gen_lead(Composition *c, const GlobalAnalysis *ga, const int *scale,
                      int root, const SongSection *sec)
 {
-    if (sec->type == SEC_INTRO || sec->type == SEC_OUTRO) return;
+    if (sec->type == SEC_OUTRO) return;
+
+    /* During intro: only play lead in the last 2 bars as a teaser */
+    int lead_start = sec->start_tick;
+    if (sec->type == SEC_INTRO) {
+        int total_bars = (sec->end_tick - sec->start_tick) / TICKS_PER_BAR;
+        lead_start = sec->start_tick + (total_bars - 2) * TICKS_PER_BAR;
+    }
 
     int motif_idx = (sec->type == SEC_CHORUS) ? 0 : (sec->type == SEC_BRIDGE) ? 2 : 1;
     int alt_motif = (sec->type == SEC_CHORUS) ? 3 : motif_idx;
     int base_oct = 60;  /* C4 */
 
-    for (int tick = sec->start_tick; tick < sec->end_tick; tick++) {
+    for (int tick = lead_start; tick < sec->end_tick; tick++) {
         int step = tick % 16;
         if (!((ga->melody_rhythm >> (15 - step)) & 1)) continue;
 
@@ -166,7 +173,6 @@ static void gen_harmony(Composition *c, const GlobalAnalysis *ga, const int *sca
 static void gen_bass(Composition *c, const GlobalAnalysis *ga, const int *scale,
                      int root, const int *prog, const SongSection *sec)
 {
-    if (sec->type == SEC_INTRO) return;
 
     int base_oct = 36;  /* C2 */
     (void)ga;
@@ -177,9 +183,17 @@ static void gen_bass(Composition *c, const GlobalAnalysis *ga, const int *scale,
         int chord_root_deg = prog[bar % 4];
 
         /* bass pattern: root on 1, fifth on 5/9, passing tone on 13 */
+        /* during intro: only root notes on beat 1 */
         int note = 0;
         int dur = 2;
-        if (step == 0) {
+        if (sec->type == SEC_INTRO) {
+            if (step == 0) {
+                note = scale_note(scale, base_oct + root, chord_root_deg);
+                dur = 8;
+            } else {
+                continue;
+            }
+        } else if (step == 0) {
             note = scale_note(scale, base_oct + root, chord_root_deg);
             dur = 4;
         } else if (step == 4 || step == 8) {
@@ -217,7 +231,7 @@ static void gen_bass(Composition *c, const GlobalAnalysis *ga, const int *scale,
 static void gen_arp(Composition *c, const GlobalAnalysis *ga, const int *scale,
                     int root, const int *prog, const SongSection *sec)
 {
-    if (sec->type == SEC_INTRO || sec->type == SEC_OUTRO) return;
+    if (sec->type == SEC_OUTRO) return;
     if (sec->type == SEC_BRIDGE) return;
 
     int base_oct = 60;
@@ -267,7 +281,7 @@ static void gen_arp(Composition *c, const GlobalAnalysis *ga, const int *scale,
 static void gen_pad(Composition *c, const GlobalAnalysis *ga, const int *scale,
                     int root, const int *prog, const SongSection *sec)
 {
-    if (sec->type == SEC_INTRO || sec->type == SEC_OUTRO) return;
+    if (sec->type == SEC_OUTRO) return;
     (void)ga;
 
     int base_oct = 48;  /* C3 */
@@ -306,7 +320,6 @@ static void gen_pad(Composition *c, const GlobalAnalysis *ga, const int *scale,
 
 static void gen_drums(Composition *c, const GlobalAnalysis *ga, const SongSection *sec)
 {
-    if (sec->type == SEC_INTRO) return;
 
     int last_bar = (sec->end_tick - sec->start_tick) / TICKS_PER_BAR - 1;
 
@@ -325,17 +338,20 @@ static void gen_drums(Composition *c, const GlobalAnalysis *ga, const SongSectio
             });
         }
 
-        /* kick */
+        /* kick — skip during intro except last 2 bars for build-up */
         if ((ga->kick_pattern >> (15 - step)) & 1) {
+            if (sec->type == SEC_INTRO && bar < last_bar - 1) goto skip_kick;
             int vel = is_fill ? 120 : (int)(80.0f + sec->intensity * 35.0f);
+            if (sec->type == SEC_INTRO) vel = (int)(50.0f + 20.0f * (float)(bar - (last_bar - 1)));
             push_event(c, (MusicEvent){
                 .tick = tick, .midi_note = DRUM_KICK, .duration_ticks = 2,
                 .velocity = vel, .waveform = WAVE_NOISE, .channel = CH_DRUMS,
                 .duty_cycle = 0.5f,
             });
         }
-        /* snare */
-        if ((ga->snare_pattern >> (15 - step)) & 1) {
+        skip_kick:
+        /* snare — skip during intro */
+        if ((ga->snare_pattern >> (15 - step)) & 1 && sec->type != SEC_INTRO) {
             int vel = is_fill ? 115 : (int)(75.0f + sec->intensity * 35.0f);
             push_event(c, (MusicEvent){
                 .tick = tick, .midi_note = DRUM_SNARE, .duration_ticks = 2,

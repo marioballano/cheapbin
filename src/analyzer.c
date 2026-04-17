@@ -83,51 +83,51 @@ void analyze_global(const uint8_t *data, size_t size, GlobalAnalysis *out)
         return;
     }
 
-    /* Sample bytes from strategic file positions */
-    uint8_t b0  = safe_byte(data, size, 0);
-    uint8_t b1  = safe_byte(data, size, 1);
-    uint8_t b2  = safe_byte(data, size, 2);
-    uint8_t b3  = safe_byte(data, size, 3);
-    uint8_t b4  = safe_byte(data, size, 4);
+    /* Accumulate a fingerprint from the ENTIRE file.
+       XOR-fold all bytes into 16 accumulators so that even files with
+       identical headers (Mach-O magic, ELF magic, etc.) diverge based
+       on their actual unique content. */
+    uint8_t acc[16];
+    memset(acc, 0, sizeof(acc));
+    for (size_t i = 0; i < size; i++) {
+        acc[i % 16] ^= data[i];
+        acc[(i + 5) % 16] += data[i];  /* rotate-add for more spread */
+    }
+    /* Mix in file size so e.g. truncated copies differ */
+    acc[0] ^= (uint8_t)(size & 0xFF);
+    acc[1] ^= (uint8_t)((size >> 8) & 0xFF);
+    acc[2] ^= (uint8_t)((size >> 16) & 0xFF);
+
+    /* Also sample a few strategic deeper positions */
     uint8_t bq1 = safe_byte(data, size, size / 4);
     uint8_t bq2 = safe_byte(data, size, size / 2);
     uint8_t bq3 = safe_byte(data, size, 3 * size / 4);
-    uint8_t bend = safe_byte(data, size, size > 1 ? size - 1 : 0);
 
-    /* Musical parameters derived directly from bytes */
-    out->scale_index        = b0 % 10;
-    out->progression_index  = (b1 + b2) % 8;
-    out->root_note          = b3 % 12;
-    out->base_tempo         = 100.0f + (float)b4 * (80.0f / 255.0f);
-    out->style              = bq1 % 4;
-    out->swing              = (float)(bq2 % 36) / 100.0f;
-    out->duty_base          = 0.125f + (float)(bq3 % 128) / 255.0f;
-    out->vibrato_depth      = 0.05f + (float)(bend % 36) / 100.0f;
-    out->echo_feedback      = 0.15f + (float)((bq1 + bq3) % 31) / 100.0f;
+    /* Musical parameters derived from accumulated fingerprint */
+    out->scale_index        = acc[0] % 10;
+    out->progression_index  = acc[1] % 8;
+    out->root_note          = acc[2] % 12;
+    out->base_tempo         = 100.0f + (float)acc[3] * (80.0f / 255.0f);
+    out->style              = acc[4] % 4;
+    out->swing              = (float)(acc[5] % 36) / 100.0f;
+    out->duty_base          = 0.125f + (float)(acc[6] % 128) / 255.0f;
+    out->vibrato_depth      = 0.05f + (float)(acc[7] % 36) / 100.0f;
+    out->echo_feedback      = 0.15f + (float)(acc[8] % 31) / 100.0f;
 
-    /* Drum patterns from byte pairs at 1/6, 2/6, 3/6 positions */
-    {
-        size_t dp = size / 6;
-        if (dp == 0) dp = 1;
-        out->kick_pattern  = KICK_PATS[(safe_byte(data, size, dp) + safe_byte(data, size, dp+1)) % 10];
-        out->snare_pattern = SNARE_PATS[(safe_byte(data, size, dp*2) + safe_byte(data, size, dp*2+1)) % 10];
-        out->hat_pattern   = HAT_PATS[(safe_byte(data, size, dp*3) + safe_byte(data, size, dp*3+1)) % 10];
-    }
+    /* Drum and rhythm patterns from accumulators */
+    out->kick_pattern  = KICK_PATS[(acc[9] + bq1) % 10];
+    out->snare_pattern = SNARE_PATS[(acc[10] + bq2) % 10];
+    out->hat_pattern   = HAT_PATS[(acc[11] + bq3) % 10];
+    out->melody_rhythm = MELODY_PATS[acc[12] % 10];
+    out->arp_rhythm    = ARP_PATS[acc[13] % 10];
 
-    /* Melody & arp rhythm from 4/5 position */
-    {
-        size_t rp = size / 5;
-        if (rp == 0) rp = 1;
-        out->melody_rhythm = MELODY_PATS[safe_byte(data, size, rp * 4) % 10];
-        out->arp_rhythm    = ARP_PATS[safe_byte(data, size, rp * 4 + 1) % 10];
-    }
-
-    /* Extract 4 melodic motifs from evenly-spaced file positions */
+    /* Extract 4 melodic motifs: combine accumulator seeds with
+       bytes at varied file positions for maximum diversity */
     for (int m = 0; m < 4; m++) {
         size_t base = (size * (size_t)(m + 1)) / 5;
         for (int n = 0; n < 8; n++) {
-            uint8_t b = safe_byte(data, size, base + (size_t)n);
-            out->motifs[m][n] = b % 16;
+            uint8_t fb = safe_byte(data, size, base + (size_t)n * 37);
+            out->motifs[m][n] = (fb ^ acc[(m * 3 + n) % 16]) % 16;
         }
     }
 }
