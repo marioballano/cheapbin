@@ -3,7 +3,7 @@
 
 #include "synth.h"
 
-/* Initialize Core Audio playback for the given synth state.
+/* Initialize audio playback for the given synth state.
    Returns 0 on success, -1 on error. */
 int audio_init(SynthState *synth);
 
