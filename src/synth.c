@@ -545,9 +545,11 @@ void synth_init(SynthState *s, Composition *comp)
     s->sections        = comp->sections;
     s->num_sections    = comp->num_sections;
     s->current_section = 0;
-    if (comp->num_sections > 0)
-        strncpy(s->section_name, comp->sections[0].name,
-                sizeof(s->section_name) - 1);
+    if (comp->num_sections > 0) {
+        memcpy(s->section_name, comp->sections[0].name,
+               sizeof(s->section_name));
+        s->section_name[sizeof(s->section_name) - 1] = '\0';
+    }
 
     /* tick timing */
     float tick_sec = 60.0f / s->bpm / 4.0f;
@@ -737,8 +739,9 @@ static void advance_tick(SynthState *s)
             s->current_tick < s->sections[i].end_tick) {
             if (s->current_section != i) {
                 s->current_section = i;
-                strncpy(s->section_name, s->sections[i].name,
-                        sizeof(s->section_name) - 1);
+                memcpy(s->section_name, s->sections[i].name,
+                       sizeof(s->section_name));
+                s->section_name[sizeof(s->section_name) - 1] = '\0';
 
                 /* fade out for outro */
                 if (s->sections[i].type == SEC_OUTRO) {

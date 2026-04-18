@@ -1118,23 +1118,6 @@ static const char *REGISTERS[] = {
 
 #define NUM_REGISTERS (sizeof(REGISTERS) / sizeof(REGISTERS[0]))
 
-/* ── Hex string fragments ──────────────────────────────────────────── */
-
-static const char *HEX_FRAGMENTS[] = {
-    "0xDEADBEEF", "0xCAFEBABE", "0xDEADC0DE", "0xBAADF00D",
-    "0xFEEDFACE", "0xC0FFEE00", "0x0BADC0DE", "0xDEFEC8ED",
-    "0xD15EA5E0", "0x8BADF00D", "0xABADBABE", "0xBAAAAAAD",
-    "0xFEE1DEAD", "0xFACEFEED", "0xDABBAD00", "0xDEADFA11",
-    "0xB16B00B5", "0x0D15EA5E", "0xC00010FF", "0xBEEFCACE",
-    "0x0000FFFF", "0x7FFFFFFF", "0x80000000", "0xFFFFFFFF",
-    "0x41414141", "0x42424242", "0x90909090", "0xCCCCCCCC",
-    "0xEBFE0000", "0x7F454C46", "0xFEEDFACF", "0x4D5A9000",
-    "0x504B0304", "0x89504E47", "0xFFD8FFE0", "0x25504446",
-    "0x47494638", "0x52617221", "0x1F8B0800", "0x377ABCAF",
-};
-
-#define NUM_HEX_FRAGMENTS (sizeof(HEX_FRAGMENTS) / sizeof(HEX_FRAGMENTS[0]))
-
 /* ── Section names ─────────────────────────────────────────────────── */
 
 static const char *SECTION_NAMES[] = {
@@ -1148,31 +1131,6 @@ static const char *SECTION_NAMES[] = {
 };
 
 #define NUM_SECTION_NAMES (sizeof(SECTION_NAMES) / sizeof(SECTION_NAMES[0]))
-
-/* ── File signatures / Magic bytes ─────────────────────────────────── */
-
-static const char *MAGIC_SIGS[] = {
-    "7F 45 4C 46  ELF",
-    "CF FA ED FE  Mach-O 64",
-    "CE FA ED FE  Mach-O 32",
-    "CA FE BA BE  Fat Binary",
-    "4D 5A 90 00  PE/DOS",
-    "50 4B 03 04  ZIP/APK",
-    "89 50 4E 47  PNG",
-    "FF D8 FF E0  JPEG",
-    "25 50 44 46  PDF",
-    "47 49 46 38  GIF",
-    "1F 8B 08 00  GZIP",
-    "FD 37 7A 58  XZ",
-    "42 5A 68 00  BZIP2",
-    "52 61 72 21  RAR",
-    "37 7A BC AF  7ZIP",
-    "00 61 73 6D  WASM",
-    "DE C0 17 0B  Dalvik",
-    "64 65 78 0A  DEX",
-};
-
-#define NUM_MAGIC_SIGS (sizeof(MAGIC_SIGS) / sizeof(MAGIC_SIGS[0]))
 
 /* ── Fake disassembly snippets ─────────────────────────────────────── */
 
@@ -1229,18 +1187,5 @@ static const char *FAKE_DISASM[] = {
 };
 
 #define NUM_FAKE_DISASM (sizeof(FAKE_DISASM) / sizeof(FAKE_DISASM[0]))
-
-/* ── ASCII art fragments for border decoration ─────────────────────── */
-
-static const char *BORDER_GLYPHS[] = {
-    "╔", "╗", "╚", "╝", "║", "═", "╠", "╣", "╦", "╩", "╬",
-    "┌", "┐", "└", "┘", "│", "─", "├", "┤", "┬", "┴", "┼",
-    "▀", "▄", "█", "▌", "▐", "░", "▒", "▓",
-    "◀", "▶", "▲", "▼", "◆", "◇", "○", "●", "◉", "◎",
-    "★", "☆", "♪", "♫", "♬", "♩", "⚡", "⚙", "⚠", "✓",
-    "⟨", "⟩", "«", "»", "⌘", "⌥", "⇧", "⏎",
-};
-
-#define NUM_BORDER_GLYPHS (sizeof(BORDER_GLYPHS) / sizeof(BORDER_GLYPHS[0]))
 
 #endif /* CHEAPBIN_RE_DATA_H */
