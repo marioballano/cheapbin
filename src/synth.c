@@ -1,4 +1,5 @@
 #include "synth.h"
+#include "chipemu.h"
 #include <math.h>
 #include <string.h>
 
@@ -276,6 +277,254 @@ static void channel_note_on(Channel *ch, const MusicEvent *ev,
     env_trigger(&ch->env);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   Chip emulation DSP — waveform shaping and post-processing that
+   colours the existing synthesis to sound like classic hardware.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Adjust waveform type and duty cycle per-chip BEFORE gen_sample(). */
+static void chip_adjust_voice(ChipType chip, int ch_idx,
+                              int *waveform, float *duty, float vib_phase)
+{
+    switch (chip) {
+    case CHIP_NES:
+        /* 2A03: triangle channel for bass/pad (hardware triangle is
+           4-bit stepped — we handle that in chip_color_sample).
+           Everything else gets pulse, snapped to the 4 hardware duties.
+           Noise channel stays as noise.  Arpeggio gets 12.5% for the
+           classic NES "chime" sound. */
+        if (*waveform == WAVE_NOISE) break;
+        if (ch_idx == CH_BASS || ch_idx == CH_PAD) {
+            *waveform = WAVE_TRIANGLE;
+        } else {
+            *waveform = WAVE_PULSE;
+            if (ch_idx == CH_ARPEGGIO) {
+                *duty = 0.125f;  /* thin arp chirp */
+            } else if (ch_idx == CH_HARMONY) {
+                *duty = 0.25f;   /* hollow harmony */
+            } else {
+                /* lead: snap to nearest hardware duty */
+                float d = *duty;
+                if      (d < 0.1875f) *duty = 0.125f;
+                else if (d < 0.375f)  *duty = 0.25f;
+                else if (d < 0.625f)  *duty = 0.5f;
+                else                  *duty = 0.75f;
+            }
+        }
+        break;
+
+    case CHIP_SPECTRUM:
+        /* AY-3-8910: only 50 % square waves. */
+        *waveform = WAVE_SQUARE;
+        *duty     = 0.5f;
+        break;
+
+    case CHIP_SID:
+        /* MOS 6581: wide PWM sweep is the iconic SID sound.
+           Different channels get different sweep rates for richness. */
+        if (*waveform == WAVE_PULSE || *waveform == WAVE_SQUARE) {
+            float sweep_rate = 1.7f + (float)ch_idx * 0.3f;
+            float sweep_depth = 0.30f;
+            *duty = 0.5f + sweep_depth * sinf(vib_phase * sweep_rate);
+            if (*duty < 0.08f) *duty = 0.08f;
+            if (*duty > 0.92f) *duty = 0.92f;
+        }
+        /* SID's sawtooth is also very characteristic */
+        if (ch_idx == CH_BASS)
+            *waveform = WAVE_SAWTOOTH;
+        break;
+
+    case CHIP_GENESIS:
+        /* YM2612 is all about FM — replace smooth waveforms with
+           harsher, more harmonically rich alternatives.
+           Bass gets sawtooth, lead and harmony keep their shape but
+           will be FM'd in chip_color_sample. */
+        if (ch_idx == CH_BASS || ch_idx == CH_PAD) {
+            *waveform = WAVE_SAWTOOTH;
+        }
+        if (*waveform == WAVE_TRIANGLE && ch_idx == CH_LEAD) {
+            *waveform = WAVE_SAWTOOTH;
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+/* Per-channel colouring applied to a raw sample AFTER gen_sample(). */
+static float chip_color_sample(ChipState *cs, float sample, int ch_idx)
+{
+    switch (cs->type) {
+    case CHIP_NES: {
+        /* 2A03 triangle is notoriously 4-bit stepped (16 levels).
+           Pulse channels get quantized to 4-bit volume. */
+        if (ch_idx == CH_BASS || ch_idx == CH_PAD) {
+            /* 4-bit stepped triangle: 16 levels, very crunchy */
+            sample = floorf(sample * 8.0f + 0.5f) / 8.0f;
+        } else {
+            /* Pulse channels: 4-bit volume resolution */
+            sample = floorf(sample * 8.0f + 0.5f) / 8.0f;
+        }
+        /* NES has no smooth volume — simulate step-down per channel */
+        float vol_step = floorf(fabsf(sample) * 15.0f + 0.5f) / 15.0f;
+        sample = (sample >= 0.0f ? vol_step : -vol_step);
+        break;
+    }
+
+    case CHIP_SPECTRUM:
+        /* AY-3-8910: soft-clip to prevent square waves stacking
+           into harsh overs — tanh avoids the click of hard clip. */
+        sample = tanhf(sample * 1.05f);
+        break;
+
+    case CHIP_GENESIS: {
+        /* YM2612 FM-style waveshaping: polynomial distortion that
+           adds odd harmonics (like FM) without aliasing.  Different
+           drive amounts per channel for timbral variety. */
+        float drive = 1.4f;
+        if (ch_idx == CH_BASS)     drive = 1.8f;  /* growly bass */
+        if (ch_idx == CH_PAD)      drive = 1.1f;  /* softer pad */
+        if (ch_idx == CH_ARPEGGIO) drive = 1.6f;  /* bright arp */
+        if (ch_idx == CH_LEAD)     drive = 1.5f;
+
+        /* Soft-clip waveshaper: tanh adds odd harmonics smoothly */
+        float shaped = tanhf(sample * drive);
+
+        /* Blend: keep fundamental, mix in harmonics */
+        sample = sample * 0.4f + shaped * 0.6f;
+        break;
+    }
+
+    case CHIP_SID: {
+        /* Gentle SID warmth: very mild ring-mod coloring, not
+           amplitude-chopping — just adds subtle harmonic content. */
+        if (ch_idx == CH_LEAD || ch_idx == CH_ARPEGGIO) {
+            float ring = sinf(cs->sid_ring_phase);
+            sample += sample * ring * 0.06f;  /* additive, not multiplicative */
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+    return sample;
+}
+
+/* Global post-processing on the final mono mix. */
+static float chip_post_process(ChipState *cs, float sample)
+{
+    switch (cs->type) {
+    case CHIP_SID: {
+        /* SID 6581 resonant filter — gentle sweep for that warm,
+           characteristic C64 sound without choking the signal. */
+        float lfo_speed = 0.00006f;  /* slow, musical sweep */
+        cs->sid_lfo_phase += lfo_speed;
+        if (cs->sid_lfo_phase > 6.2832f) cs->sid_lfo_phase -= 6.2832f;
+
+        /* Sweep cutoff — stays in a warm, open range */
+        float cutoff_norm = 0.45f + 0.15f * sinf(cs->sid_lfo_phase);
+
+        /* One-pole state-variable filter with mild resonance */
+        float f = cutoff_norm;
+        if (f > 0.9f) f = 0.9f;
+        float q = 1.0f - cs->sid_resonance * 0.55f;  /* moderate Q */
+
+        cs->sid_lp += f * cs->sid_bp;
+        float hp = sample - cs->sid_lp - q * cs->sid_bp;
+        cs->sid_bp += f * hp;
+
+        /* Filter mix: mostly lowpass for warmth */
+        float filtered = cs->sid_lp * 0.7f + cs->sid_bp * 0.3f;
+
+        /* Gentle analog warmth (mild soft-clip, not hard saturation) */
+        filtered = tanhf(filtered * 1.1f);
+
+        /* Ring modulator oscillator advance (slow) */
+        cs->sid_ring_phase += 0.0007f;
+        if (cs->sid_ring_phase > 6.2832f) cs->sid_ring_phase -= 6.2832f;
+
+        sample = filtered;
+        break;
+    }
+
+    case CHIP_NES: {
+        /* 2A03 has a two-stage high-pass filter chain:
+           Stage 1: ~37 Hz (removes DC from triangle channel)
+           Stage 2: ~667 Hz cut applied to the delta-sigma output
+           Plus a ~14 kHz low-pass from the pin capacitance. */
+
+        /* Stage 1 high-pass (~37 Hz) */
+        float hp1_alpha = 0.9985f;
+        float hp1_out = sample - cs->nes_hp1_cap;
+        cs->nes_hp1_cap += (1.0f - hp1_alpha) * hp1_out;
+
+        /* Stage 2 high-pass (~667 Hz, very subtle) */
+        float hp2_alpha = 0.997f;
+        float hp2_out = hp1_out - cs->nes_hp2_cap;
+        cs->nes_hp2_cap += (1.0f - hp2_alpha) * hp2_out;
+
+        /* Low-pass (~14 kHz — smooths the step edges) */
+        float lp_alpha = 0.7f;
+        cs->nes_lp_state = lp_alpha * cs->nes_lp_state +
+                           (1.0f - lp_alpha) * hp2_out;
+
+        sample = cs->nes_lp_state;
+
+        /* NES non-linear mixer: pulse and triangle/noise are mixed
+           through separate DAC paths with non-linear response.
+           Approximate with a soft-saturating curve. */
+        float x = sample * 1.8f;
+        if (x > 0.0f)
+            sample = x / (1.0f + x);
+        else
+            sample = x / (1.0f - x);
+
+        /* 7-bit effective output resolution */
+        sample = floorf(sample * 64.0f + 0.5f) / 64.0f;
+        break;
+    }
+
+    case CHIP_GENESIS: {
+        /* YM2612 post-processing: gentle hardware LFO tremolo
+           and mild DAC character without harsh quantization. */
+
+        /* Hardware LFO (~4 Hz tremolo, subtle) */
+        cs->fm_lfo_phase += 0.0003f;
+        if (cs->fm_lfo_phase > 6.2832f) cs->fm_lfo_phase -= 6.2832f;
+        float tremolo = 1.0f - 0.04f * (sinf(cs->fm_lfo_phase) + 1.0f) * 0.5f;
+        sample *= tremolo;
+
+        /* Gentle overdrive — just enough to add FM grit */
+        sample = tanhf(sample * 1.15f);
+
+        /* 9-bit DAC: light quantization without error diffusion */
+        sample = floorf(sample * 256.0f + 0.5f) / 256.0f;
+        break;
+    }
+
+    case CHIP_SPECTRUM: {
+        /* AY-3-8910: gentle DC-blocking high-pass for the thin
+           beeper feel, fully applied (no raw bypass). */
+        float alpha = 0.995f;
+        float out = alpha * (cs->ay_hp_prev_out + sample - cs->ay_hp_prev_in);
+        cs->ay_hp_prev_in  = sample;
+        cs->ay_hp_prev_out = out;
+        sample = out;
+
+        /* 5-bit DAC quantisation (32 levels) — crunchy but not
+           coarse enough to create audible background noise. */
+        sample = floorf(sample * 16.0f + 0.5f) / 16.0f;
+        break;
+    }
+
+    default:
+        break;
+    }
+    return sample;
+}
+
 /* ── Init ───────────────────────────────────────────────────────────── */
 
 void synth_init(SynthState *s, Composition *comp)
@@ -337,6 +586,80 @@ void synth_init(SynthState *s, Composition *comp)
     s->master_fade = 0.0f;
     s->fade_target = 1.0f;
     s->fade_speed  = 1.0f / (0.5f * SAMPLE_RATE);  /* 0.5s fade in */
+
+    /* default chip (caller should follow with synth_set_chip) */
+    s->chip_type = CHIP_DEFAULT;
+    chip_init(&s->chip_state, CHIP_DEFAULT);
+}
+
+/* ── Chip selection (can be called at any time, even mid-playback) ── */
+
+void synth_set_chip(SynthState *s, ChipType chip)
+{
+    s->chip_type = chip;
+    chip_init(&s->chip_state, chip);
+
+    /* Tune delay / filter / volume to match each chip's character. */
+    switch (chip) {
+    case CHIP_SID:
+        /* C64: lush reverb, warm filter, bass-heavy mix */
+        s->delay_feedback = 0.40f;
+        s->delay_mix      = 0.28f;
+        s->lpf_alpha      = 0.75f;  /* very warm, muffled highs */
+        s->channels[CH_LEAD].volume     = 0.26f;
+        s->channels[CH_HARMONY].volume  = 0.18f;
+        s->channels[CH_BASS].volume     = 0.30f;  /* SID bass is fat */
+        s->channels[CH_ARPEGGIO].volume = 0.16f;
+        s->channels[CH_PAD].volume      = 0.12f;
+        s->channels[CH_DRUMS].volume    = 0.18f;  /* drums recessed */
+        break;
+    case CHIP_NES:
+        /* NES: dry, bright, punchy, limited dynamic range */
+        s->delay_feedback = 0.08f;
+        s->delay_mix      = 0.05f;  /* almost no reverb */
+        s->lpf_alpha      = 0.88f;  /* bright but not harsh */
+        s->channels[CH_LEAD].volume     = 0.30f;
+        s->channels[CH_HARMONY].volume  = 0.12f;  /* only 2 pulse ch */
+        s->channels[CH_BASS].volume     = 0.28f;  /* triangle is loud */
+        s->channels[CH_ARPEGGIO].volume = 0.16f;
+        s->channels[CH_PAD].volume      = 0.06f;  /* NES has no pad */
+        s->channels[CH_DRUMS].volume    = 0.24f;  /* noise ch punch */
+        break;
+    case CHIP_GENESIS:
+        /* Genesis: aggressive, wide, FM sizzle */
+        s->delay_feedback = 0.25f;
+        s->delay_mix      = 0.18f;
+        s->lpf_alpha      = 0.88f;  /* crisp FM overtones */
+        s->channels[CH_LEAD].volume     = 0.30f;
+        s->channels[CH_HARMONY].volume  = 0.20f;
+        s->channels[CH_BASS].volume     = 0.28f;  /* Genesis bass growls */
+        s->channels[CH_ARPEGGIO].volume = 0.15f;
+        s->channels[CH_PAD].volume      = 0.12f;
+        s->channels[CH_DRUMS].volume    = 0.26f;  /* punchy drums */
+        break;
+    case CHIP_SPECTRUM:
+        s->delay_feedback = 0.12f;
+        s->delay_mix      = 0.10f;
+        s->lpf_alpha      = 0.82f;
+        s->channels[CH_LEAD].volume     = 0.28f;
+        s->channels[CH_HARMONY].volume  = 0.15f;
+        s->channels[CH_BASS].volume     = 0.25f;
+        s->channels[CH_ARPEGGIO].volume = 0.14f;
+        s->channels[CH_PAD].volume      = 0.10f;
+        s->channels[CH_DRUMS].volume    = 0.22f;
+        break;
+    default:
+        s->delay_feedback = 0.30f;
+        s->delay_mix      = 0.20f;
+        s->lpf_alpha      = 0.85f;
+        s->channels[CH_LEAD].volume     = 0.28f;
+        s->channels[CH_HARMONY].volume  = 0.15f;
+        s->channels[CH_BASS].volume     = 0.25f;
+        s->channels[CH_ARPEGGIO].volume = 0.14f;
+        s->channels[CH_PAD].volume      = 0.10f;
+        s->channels[CH_DRUMS].volume    = 0.22f;
+        break;
+    }
 }
 
 /* ── Tick advance ───────────────────────────────────────────────────── */
@@ -428,7 +751,25 @@ void synth_render(SynthState *s, int16_t *buffer, int num_samples)
             if (c == CH_DRUMS) continue;  /* drums handled separately */
             if (ch->env.stage == ENV_IDLE) continue;
 
+            /* ── chip: adjust waveform / duty before generation ── */
+            int   save_wf   = ch->waveform;
+            float save_duty  = ch->duty;
+            int   adj_wf    = ch->waveform;
+            float adj_duty   = ch->duty;
+            chip_adjust_voice(s->chip_type, c, &adj_wf, &adj_duty,
+                              (float)ch->vib_phase);
+            ch->waveform = adj_wf;
+            ch->duty     = adj_duty;
+
             float sample = gen_sample(ch);
+
+            /* restore originals so the composer's intent is preserved */
+            ch->waveform = save_wf;
+            ch->duty     = save_duty;
+
+            /* ── chip: per-channel colouring ── */
+            sample = chip_color_sample(&s->chip_state, sample, c);
+
             float env    = env_process(&ch->env);
             float out    = sample * env * ch->volume;
             mix += out;
@@ -449,6 +790,7 @@ void synth_render(SynthState *s, int16_t *buffer, int num_samples)
         for (int d = 0; d < 4; d++)
             drum_mix += drum_process(&s->drum_voices[d]);
         drum_mix *= s->channels[CH_DRUMS].volume;
+        drum_mix = chip_color_sample(&s->chip_state, drum_mix, CH_DRUMS);
         mix += drum_mix;
 
         float abs_drum = fabsf(drum_mix);
@@ -479,6 +821,9 @@ void synth_render(SynthState *s, int16_t *buffer, int num_samples)
                 s->master_fade = s->fade_target;
         }
         mix *= s->master_fade;
+
+        /* chip post-processing (filters, quantisation, etc.) */
+        mix = chip_post_process(&s->chip_state, mix);
 
         /* soft clip */
         if (mix > 1.0f) mix = 1.0f;

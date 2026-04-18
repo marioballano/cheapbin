@@ -23,6 +23,7 @@ add_executable(cheapbin
     src/analyzer.c
     src/composer.c
     src/synth.c
+    src/chipemu.c
     ${PLATFORM_AUDIO_SRC}
     src/display.c
 )

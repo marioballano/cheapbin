@@ -1,4 +1,5 @@
 #include "display.h"
+#include "chipemu.h"
 #include "re_data.h"
 #include <math.h>
 #include <stdio.h>
@@ -74,6 +75,16 @@ static void buf_printf(const char *fmt, ...)
 /* Convenience macros — everything via the buffer */
 #define MOVETO(r,c) buf_printf(ESC "%d;%dH", (r), (c))
 #define FG(r,g,b)   buf_printf(ESC "38;2;%d;%d;%dm", (r), (g), (b))
+
+/* Display width of a UTF-8 string (columns, not bytes).
+   Counts one column per character start byte, skipping continuation bytes. */
+static int display_width(const char *str)
+{
+    int w = 0;
+    for (const unsigned char *p = (const unsigned char *)str; *p; p++)
+        if ((*p & 0xC0) != 0x80) w++;
+    return w;
+}
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
@@ -194,11 +205,19 @@ static void draw_header(int w, const SynthState *s)
     const char *spinners = "|/-\\";
     buf_printf(" " DIM "%c" RESET, spinners[s_frame & 3]);
 
+    /* Chip indicator */
+    buf_printf(" ");
+    FG(180, 80, 255);
+    buf_printf(BOLD "◈" RESET " ");
+    FG(200, 160, 255);
+    buf_printf("%s" RESET, chip_short_name(s->chip_type));
+
     /* Right-side info */
     char info[64];
     int n = snprintf(info, sizeof(info), " [%s] %.0f BPM ",
                      s->section_name, (double)s->bpm);
-    int pad = bw - 13 - n;
+    int chip_len = 3 + display_width(chip_short_name(s->chip_type));
+    int pad = bw - 13 - n - chip_len;
     for (int i = 0; i < pad; i++) buf_printf(" ");
     FG(255, 200, 0);
     buf_printf(BOLD "%s" RESET, info);
@@ -667,10 +686,14 @@ static void draw_status(int row, const SynthState *s)
         FG(80, 80, 100);
         buf_printf("space" RESET " resume  ");
         FG(80, 80, 100);
+        buf_printf("c" RESET " chip   ");
+        FG(80, 80, 100);
         buf_printf("q" RESET " quit");
     } else if (s->finished) {
         FG(0, 255, 100);
         buf_printf(BOLD "✓ COMPLETE " RESET);
+        FG(80, 80, 100);
+        buf_printf("c" RESET " chip   ");
         FG(80, 80, 100);
         buf_printf("q" RESET " quit");
     } else {
@@ -678,6 +701,8 @@ static void draw_status(int row, const SynthState *s)
         buf_printf(BOLD "▶ PLAYING  " RESET);
         FG(80, 80, 100);
         buf_printf("space" RESET " pause   ");
+        FG(80, 80, 100);
+        buf_printf("c" RESET " chip   ");
         FG(80, 80, 100);
         buf_printf("q" RESET " quit");
     }

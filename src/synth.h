@@ -2,6 +2,7 @@
 #define CHEAPBIN_SYNTH_H
 
 #include "composer.h"
+#include "chipemu.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -88,9 +89,13 @@ typedef struct {
     float        ch_levels[NUM_CHANNELS];
     int          current_note;
     float        progress;
+
+    ChipType     chip_type;
+    ChipState    chip_state;
 } SynthState;
 
 void synth_init(SynthState *s, Composition *comp);
+void synth_set_chip(SynthState *s, ChipType chip);
 void synth_render(SynthState *s, int16_t *buffer, int num_samples);
 
 #endif

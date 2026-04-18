@@ -1,6 +1,7 @@
 #include "reader.h"
 #include "composer.h"
 #include "synth.h"
+#include "chipemu.h"
 #include "audio.h"
 #include "display.h"
 
@@ -29,13 +30,19 @@ static void print_usage(const char *prog)
         "\n"
         "  \033[1;96m♪ CHEAPBIN\033[0m — binary-to-chiptune music\n"
         "\n"
-        "  \033[1mUsage:\033[0m %s <file>\n"
+        "  \033[1mUsage:\033[0m %s [options] <file>\n"
         "\n"
         "  Reads a binary file and transforms it into a chiptune melody.\n"
         "  Any file works — executables, images, archives, you name it.\n"
         "\n"
+        "  \033[1mOptions:\033[0m\n"
+        "    --chip <name>   Force a sound chip emulation:\n"
+        "                      sid, nes, genesis, spectrum, clean\n"
+        "    -h, --help      Show this help\n"
+        "\n"
         "  \033[90mControls:\033[0m\n"
         "    space   pause / resume\n"
+        "    c       cycle sound chip\n"
         "    q       quit\n"
         "\n", prog);
 }
@@ -44,12 +51,38 @@ static void print_usage(const char *prog)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2 || strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
-        print_usage(argv[0]);
-        return (argc != 2) ? 1 : 0;
+    const char *filepath = NULL;
+    int forced_chip = -1;  /* -1 = auto-select from file content */
+
+    /* ── Parse arguments ── */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (strcmp(argv[i], "--chip") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --chip requires an argument\n");
+                return 1;
+            }
+            forced_chip = chip_parse(argv[++i]);
+            if (forced_chip < 0) {
+                fprintf(stderr, "error: unknown chip '%s'\n", argv[i]);
+                fprintf(stderr, "  valid: sid, nes, genesis, spectrum, clean\n");
+                return 1;
+            }
+        } else if (argv[i][0] == '-') {
+            fprintf(stderr, "error: unknown option '%s'\n", argv[i]);
+            print_usage(argv[0]);
+            return 1;
+        } else {
+            filepath = argv[i];
+        }
     }
 
-    const char *filepath = argv[1];
+    if (!filepath) {
+        print_usage(argv[0]);
+        return 1;
+    }
 
     /* ── Read binary ── */
     uint8_t *data = NULL;
@@ -75,6 +108,12 @@ int main(int argc, char *argv[])
     /* ── Init synth ── */
     SynthState synth;
     synth_init(&synth, &comp);
+
+    /* ── Select sound chip ── */
+    ChipType chip = (forced_chip >= 0)
+                  ? (ChipType)forced_chip
+                  : chip_select_from_data(data, size);
+    synth_set_chip(&synth, chip);
 
     /* ── Init audio ── */
     if (audio_init(&synth) != 0) {
@@ -120,6 +159,8 @@ int main(int argc, char *argv[])
                 audio_pause();
             else
                 audio_resume();
+        } else if (key == 'c' || key == 'C') {
+            synth_set_chip(&synth, chip_next(synth.chip_type));
         }
 
         /* update display */
