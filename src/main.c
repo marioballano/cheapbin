@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
     /* ── Init display ── */
     char *pathcopy = strdup(filepath);
     const char *fname = basename(pathcopy);
-    display_init(fname, size);
+    display_init(fname, size, data, size);
     free(pathcopy);
 
     /* ── Start playback ── */

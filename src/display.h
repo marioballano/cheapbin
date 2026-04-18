@@ -4,8 +4,10 @@
 #include "synth.h"
 #include <stdbool.h>
 
-/* Initialize the terminal UI (alt screen, raw mode, hide cursor). */
-void display_init(const char *filename, size_t filesize);
+/* Initialize the terminal UI (alt screen, raw mode, hide cursor).
+   Pass the raw file data and size for hex dump visualization. */
+void display_init(const char *filename, size_t filesize,
+                  const uint8_t *data, size_t data_size);
 
 /* Redraw the UI with current synth state. */
 void display_update(const SynthState *s);
