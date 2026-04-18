@@ -14,13 +14,13 @@ No? Well, you're about to find out anyway.
 
 ---
 
-## Install
+## Build
 
 ```bash
 cmake -B build && cmake --build build
 ```
 
-Needs macOS (uses Core Audio) and a C11 compiler. That's it. No dependencies.
+Needs macOS (uses Core Audio), CMake, and a C11 compiler. That's it. No dependencies.
 
 ---
 
