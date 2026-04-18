@@ -249,15 +249,58 @@ static void draw_file_info(int row, const SynthState *s)
         buf_printf("NOTE " DIM "---" RESET);
     }
 
-    /* Magic bytes */
+    /* Magic bytes — real bytes from the file + recognized format label */
     MOVETO(row + 1, 48);
     FG(60, 60, 80);
     buf_printf("MAGIC ");
     if (s_file_data && s_file_data_size >= 4) {
+        const uint8_t *m = s_file_data;
         FG(100, 140, 120);
         buf_printf("%02X %02X %02X %02X",
-                   s_file_data[0], s_file_data[1],
-                   s_file_data[2], s_file_data[3]);
+                   m[0], m[1], m[2], m[3]);
+
+        /* Identify common formats from magic bytes */
+        const char *fmt = NULL;
+        if (m[0] == 0xCF && m[1] == 0xFA && m[2] == 0xED && m[3] == 0xFE)
+            fmt = "Mach-O 64";
+        else if (m[0] == 0xCE && m[1] == 0xFA && m[2] == 0xED && m[3] == 0xFE)
+            fmt = "Mach-O 32";
+        else if (m[0] == 0xCA && m[1] == 0xFE && m[2] == 0xBA && m[3] == 0xBE)
+            fmt = "Fat Mach-O";
+        else if (m[0] == 0xFE && m[1] == 0xED && m[2] == 0xFA && m[3] == 0xCF)
+            fmt = "Mach-O 64 BE";
+        else if (m[0] == 0x7F && m[1] == 'E' && m[2] == 'L' && m[3] == 'F')
+            fmt = "ELF";
+        else if (m[0] == 'M' && m[1] == 'Z')
+            fmt = "PE/MZ";
+        else if (m[0] == 0x89 && m[1] == 'P' && m[2] == 'N' && m[3] == 'G')
+            fmt = "PNG";
+        else if (m[0] == 0xFF && m[1] == 0xD8 && m[2] == 0xFF)
+            fmt = "JPEG";
+        else if (m[0] == 'G' && m[1] == 'I' && m[2] == 'F')
+            fmt = "GIF";
+        else if (m[0] == 'P' && m[1] == 'K' && m[2] == 0x03 && m[3] == 0x04)
+            fmt = "ZIP";
+        else if (m[0] == 0x1F && m[1] == 0x8B)
+            fmt = "gzip";
+        else if (m[0] == 'B' && m[1] == 'Z' && m[2] == 'h')
+            fmt = "bzip2";
+        else if (m[0] == 0xFD && m[1] == '7' && m[2] == 'z' && m[3] == 'X')
+            fmt = "XZ";
+        else if (m[0] == 0x25 && m[1] == 0x50 && m[2] == 0x44 && m[3] == 0x46)
+            fmt = "PDF";
+        else if (m[0] == 'd' && m[1] == 'e' && m[2] == 'x' && m[3] == 0x0A)
+            fmt = "DEX";
+        else if (m[0] == 0x4D && m[1] == 0x53 && m[2] == 0x43 && m[3] == 0x46)
+            fmt = "CAB";
+        else if (m[0] == 0x52 && m[1] == 0x61 && m[2] == 0x72 && m[3] == 0x21)
+            fmt = "RAR";
+
+        if (fmt) {
+            buf_printf(" ");
+            FG(0, 200, 150);
+            buf_printf(BOLD "[%s]" RESET, fmt);
+        }
     }
     buf_printf(RESET);
 }
