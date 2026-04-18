@@ -3,6 +3,7 @@
 
 #include "composer.h"
 #include "chipemu.h"
+#include "style.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -92,10 +93,15 @@ typedef struct {
 
     ChipType     chip_type;
     ChipState    chip_state;
+
+    StyleType    style_type;
+    MusicEvent  *styled_events;    /* malloc'd transformed copy, or NULL */
 } SynthState;
 
 void synth_init(SynthState *s, Composition *comp);
 void synth_set_chip(SynthState *s, ChipType chip);
+void synth_apply_style(SynthState *s, StyleType style,
+                       const Composition *original);
 void synth_render(SynthState *s, int16_t *buffer, int num_samples);
 
 #endif

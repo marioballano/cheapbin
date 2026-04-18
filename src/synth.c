@@ -1,6 +1,8 @@
 #include "synth.h"
 #include "chipemu.h"
+#include "style.h"
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* ── MIDI note to frequency ─────────────────────────────────────────── */
@@ -660,6 +662,69 @@ void synth_set_chip(SynthState *s, ChipType chip)
         s->channels[CH_DRUMS].volume    = 0.22f;
         break;
     }
+}
+
+/* ── Style application (can be called at any time, even mid-playback) ── */
+
+void synth_apply_style(SynthState *s, StyleType style,
+                       const Composition *original)
+{
+    MusicEvent *old_styled = s->styled_events;
+
+    s->style_type = style;
+
+    if (style == STYLE_NONE) {
+        /* point directly to original events */
+        s->events     = original->events;
+        s->num_events = original->num_events;
+        s->bpm        = original->global_bpm;
+        s->swing      = original->swing;
+        s->styled_events = NULL;
+    } else {
+        /* make a working copy and transform it */
+        int cap = original->num_events + 8192;
+        MusicEvent *copy = malloc((size_t)cap * sizeof(MusicEvent));
+        memcpy(copy, original->events,
+               (size_t)original->num_events * sizeof(MusicEvent));
+
+        Composition temp;
+        temp.events       = copy;
+        temp.num_events   = original->num_events;
+        temp.capacity     = cap;
+        temp.sections     = original->sections;
+        temp.num_sections = original->num_sections;
+        temp.global_bpm   = original->global_bpm;
+        temp.swing        = original->swing;
+        temp.total_ticks  = original->total_ticks;
+
+        style_transform(&temp, style);
+
+        /* swap — new events are live before freeing old */
+        s->styled_events = temp.events;
+        s->events        = s->styled_events;
+        s->num_events    = temp.num_events;
+        s->bpm           = temp.global_bpm;
+        s->swing         = temp.swing;
+    }
+
+    /* update tick timing */
+    float tick_sec = 60.0f / s->bpm / 4.0f;
+    s->samples_per_tick = (int)(tick_sec * (float)SAMPLE_RATE);
+
+    /* seek event_idx to current tick */
+    s->event_idx = 0;
+    while (s->event_idx < s->num_events &&
+           s->events[s->event_idx].tick < s->current_tick)
+        s->event_idx++;
+
+    /* release active notes to avoid stuck sounds */
+    for (int c = 0; c < NUM_CHANNELS; c++) {
+        if (s->channels[c].env.stage != ENV_IDLE)
+            s->channels[c].env.stage = ENV_RELEASE;
+    }
+
+    /* now safe to free old styled events */
+    free(old_styled);
 }
 
 /* ── Tick advance ───────────────────────────────────────────────────── */

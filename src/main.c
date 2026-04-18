@@ -2,6 +2,7 @@
 #include "composer.h"
 #include "synth.h"
 #include "chipemu.h"
+#include "style.h"
 #include "audio.h"
 #include "display.h"
 
@@ -36,13 +37,18 @@ static void print_usage(const char *prog)
         "  Any file works — executables, images, archives, you name it.\n"
         "\n"
         "  \033[1mOptions:\033[0m\n"
-        "    --chip <name>   Force a sound chip emulation:\n"
-        "                      sid, nes, genesis, spectrum, clean\n"
-        "    -h, --help      Show this help\n"
+        "    --chip <name>    Force a sound chip emulation:\n"
+        "                       sid, nes, genesis, spectrum, clean\n"
+        "    --style <name>   Force a music style transformation:\n"
+        "                       synthwave, dungeon, baroque, acid,\n"
+        "                       doom, eurobeat, demoscene, ska,\n"
+        "                       trap, progrock, none\n"
+        "    -h, --help       Show this help\n"
         "\n"
         "  \033[90mControls:\033[0m\n"
         "    space   pause / resume\n"
         "    c       cycle sound chip\n"
+        "    s       cycle music style\n"
         "    q       quit\n"
         "\n", prog);
 }
@@ -52,7 +58,8 @@ static void print_usage(const char *prog)
 int main(int argc, char *argv[])
 {
     const char *filepath = NULL;
-    int forced_chip = -1;  /* -1 = auto-select from file content */
+    int forced_chip  = -1;   /* -1 = auto-select from file content */
+    int forced_style = -1;   /* -1 = no style transformation */
 
     /* ── Parse arguments ── */
     for (int i = 1; i < argc; i++) {
@@ -68,6 +75,18 @@ int main(int argc, char *argv[])
             if (forced_chip < 0) {
                 fprintf(stderr, "error: unknown chip '%s'\n", argv[i]);
                 fprintf(stderr, "  valid: sid, nes, genesis, spectrum, clean\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--style") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --style requires an argument\n");
+                return 1;
+            }
+            forced_style = style_parse(argv[++i]);
+            if (forced_style < 0) {
+                fprintf(stderr, "error: unknown style '%s'\n", argv[i]);
+                fprintf(stderr, "  valid: synthwave, dungeon, baroque, acid, doom,\n"
+                                "         eurobeat, demoscene, ska, trap, progrock, none\n");
                 return 1;
             }
         } else if (argv[i][0] == '-') {
@@ -115,6 +134,12 @@ int main(int argc, char *argv[])
                   : chip_select_from_data(data, size);
     synth_set_chip(&synth, chip);
 
+    /* ── Apply music style ── */
+    StyleType current_style = (forced_style >= 0)
+                            ? (StyleType)forced_style
+                            : STYLE_NONE;
+    synth_apply_style(&synth, current_style, &comp);
+
     /* ── Init audio ── */
     if (audio_init(&synth) != 0) {
         free(data);
@@ -161,6 +186,9 @@ int main(int argc, char *argv[])
                 audio_resume();
         } else if (key == 'c' || key == 'C') {
             synth_set_chip(&synth, chip_next(synth.chip_type));
+        } else if (key == 's' || key == 'S') {
+            current_style = style_next(current_style);
+            synth_apply_style(&synth, current_style, &comp);
         }
 
         /* update display */
@@ -187,6 +215,7 @@ int main(int argc, char *argv[])
     /* ── Cleanup ── */
     display_cleanup();
     audio_stop();
+    free(synth.styled_events);
     free(data);
     composition_free(&comp);
 

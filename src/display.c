@@ -212,12 +212,24 @@ static void draw_header(int w, const SynthState *s)
     FG(200, 160, 255);
     buf_printf("%s" RESET, chip_short_name(s->chip_type));
 
+    /* Style indicator */
+    int style_len = 0;
+    if (s->style_type != STYLE_NONE) {
+        const char *sn = style_short_name(s->style_type);
+        buf_printf("  ");
+        FG(255, 150, 50);
+        buf_printf(BOLD "♦" RESET " ");
+        FG(255, 200, 100);
+        buf_printf("%s" RESET, sn);
+        style_len = 4 + display_width(sn);
+    }
+
     /* Right-side info */
     char info[64];
     int n = snprintf(info, sizeof(info), " [%s] %.0f BPM ",
                      s->section_name, (double)s->bpm);
     int chip_len = 3 + display_width(chip_short_name(s->chip_type));
-    int pad = bw - 13 - n - chip_len;
+    int pad = bw - 13 - n - chip_len - style_len;
     for (int i = 0; i < pad; i++) buf_printf(" ");
     FG(255, 200, 0);
     buf_printf(BOLD "%s" RESET, info);
@@ -688,12 +700,16 @@ static void draw_status(int row, const SynthState *s)
         FG(80, 80, 100);
         buf_printf("c" RESET " chip   ");
         FG(80, 80, 100);
+        buf_printf("s" RESET " style  ");
+        FG(80, 80, 100);
         buf_printf("q" RESET " quit");
     } else if (s->finished) {
         FG(0, 255, 100);
         buf_printf(BOLD "✓ COMPLETE " RESET);
         FG(80, 80, 100);
         buf_printf("c" RESET " chip   ");
+        FG(80, 80, 100);
+        buf_printf("s" RESET " style  ");
         FG(80, 80, 100);
         buf_printf("q" RESET " quit");
     } else {
@@ -703,6 +719,8 @@ static void draw_status(int row, const SynthState *s)
         buf_printf("space" RESET " pause   ");
         FG(80, 80, 100);
         buf_printf("c" RESET " chip   ");
+        FG(80, 80, 100);
+        buf_printf("s" RESET " style  ");
         FG(80, 80, 100);
         buf_printf("q" RESET " quit");
     }

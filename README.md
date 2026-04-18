@@ -21,6 +21,23 @@ It ships with **4 hardware sound chip emulations** — each file plays the same 
 
 A chip is auto-selected for a given file (i.e. `/bin/ls` will always use the same chip), or you can force one with `--chip` and cycle through them live with `c`.
 
+It also ships a **music style translation layer** — 10 genre transforms that morph the feel of the music while keeping each file's unique musical DNA intact. The melodies, rhythms, and structure stay recognizable; only the style changes:
+
+| Style | Vibe |
+|-------|------|
+| Synthwave | Driving 80s retro-futuristic: pulsating sawtooth bass, lush PWM leads, rigid 4-on-the-floor |
+| Dungeon Synth | Slow, dark, atmospheric: haunting pads, sparse triangle melodies, minimal percussion |
+| Baroque | Bach counterpoint: harpsichord-thin pulses, canon/fugue echo, walking bass, strict time |
+| Acid House | Squelchy 303-style bass with heavy portamento, 4-on-the-floor kick, offbeat hats |
+| Doom Metal | Slow, heavy, oppressive: down-tuned sawtooth bass, aggressive lead, droning pads |
+| Eurobeat | Extremely fast sweeping arpeggios, off-beat driving bass, relentless 16th hi-hats |
+| Demoscene | Rapid-fire square arpeggios, punchy staccato bass, crisp syncopated drums, chip precision |
+| Ska/Reggae | Off-beat "skank" chords, walking melodic bass, one-drop drum pattern, bouncy swing |
+| Trap/Lo-Fi | Booming 808 sub-bass with glide, rapid hi-hat rolls, mellow sparse lead, heavy swing |
+| Prog Rock | Odd-time displaced accents, clean triangle lead, angular bass, irregular drum patterns |
+
+By default no style is applied. Force one with `--style` or cycle through them live with `s`.
+
 `/bin/ls` and `/bin/cat` sound different. Your malware sample and a JPEG sound different. Every binary has a unique musical fingerprint. This program finds it.
 
 ---
@@ -41,18 +58,20 @@ Needs macOS or Linux, CMake, and a C11 compiler. That's it. No dependencies.
 ./build/cheapbin <any file>
 ./build/cheapbin --chip sid <any file>
 ./build/cheapbin --chip genesis <any file>
+./build/cheapbin --style synthwave <any file>
+./build/cheapbin --style doom --chip sid <any file>
 ```
 
 ```bash
 ./build/cheapbin /bin/ls
 ./build/cheapbin --chip nes /bin/bash
 ./build/cheapbin --chip spectrum firmware.bin
-./build/cheapbin /usr/lib/libc.dylib
-./build/cheapbin some_malware_sample.bin
+./build/cheapbin --style baroque /usr/lib/libc.dylib
+./build/cheapbin --style trap some_malware_sample.bin
 ./build/cheapbin ~/Downloads/suspicious.pdf
 ```
 
-`space` to pause. `c` to cycle sound chips. `q` to quit.
+`space` to pause. `c` to cycle sound chips. `s` to cycle music styles. `q` to quit.
 
 ---
 
