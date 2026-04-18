@@ -198,7 +198,7 @@ static void draw_header(int w, const SynthState *s)
     char info[64];
     int n = snprintf(info, sizeof(info), " [%s] %.0f BPM ",
                      s->section_name, (double)s->bpm);
-    int pad = bw - 15 - n;
+    int pad = bw - 13 - n;
     for (int i = 0; i < pad; i++) buf_printf(" ");
     FG(255, 200, 0);
     buf_printf(BOLD "%s" RESET, info);
