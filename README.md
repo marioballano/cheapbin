@@ -1,112 +1,83 @@
 # ♪ CHEAPBIN
 
-**Binary-to-chiptune music generator for macOS.**
+> *You, reverser — ever wondered what `/bin/ls` sounded like?*
 
-Feed it any file — executables, images, archives — and listen to what your binaries sound like as 8-bit chiptune melodies.
+No? Well, you're about to find out anyway.
 
-## Build
+**cheapbin** turns any binary file into chiptune music. Feed it an executable, a firmware dump, a JPEG, a kernel module — doesn't matter. It reads the bytes, finds the melody hiding inside, and plays it back as 8-bit NES-style chiptune through your speakers while a hacker terminal UI scrolls fake disassembly at you.
 
-```bash
-cmake -B build
-cmake --build build
-```
+`/bin/ls` and `/bin/cat` sound different. Your malware sample and a JPEG sound different. Every binary has a unique musical fingerprint. This program finds it.
 
-Requires macOS (Core Audio) and a C11 compiler (Xcode CLT or Xcode).
+---
 
-## Usage
+## Install
 
 ```bash
-./build/cheapbin <file>
+cmake -B build && cmake --build build
 ```
 
-Examples:
+Needs macOS (uses Core Audio) and a C11 compiler. That's it. No dependencies.
+
+---
+
+## Use
+
+```bash
+./build/cheapbin <any file>
+```
 
 ```bash
 ./build/cheapbin /bin/ls
-./build/cheapbin /bin/cat
-./build/cheapbin ~/Documents/photo.jpg
+./build/cheapbin /bin/bash
 ./build/cheapbin /usr/lib/libc.dylib
+./build/cheapbin some_malware_sample.bin
+./build/cheapbin firmware.bin
+./build/cheapbin ~/Downloads/suspicious.pdf
 ```
 
-### Controls
+`space` to pause. `q` to quit.
 
-| Key     | Action         |
-|---------|----------------|
-| `space` | Pause / Resume |
-| `q`     | Quit           |
+---
 
-## How It Works
+## What you'll see
 
-### Pipeline
+A terminal UI that looks like a CTF challenge and a NES had a baby:
 
-```
-Binary File → Chunking → Statistical Analysis → Composition → Synthesis → Core Audio → 🔊
-                                                                    ↓
-                                                           Terminal Visualizer
-```
+- **6-channel level meters** — lead, harmony, bass, arpeggio, pad, drums, all color-coded and animated
+- **Live oscilloscope** — waveform visualization with hex addresses in the gutter
+- **Hex dump** — your actual file bytes scrolling in real time as the song plays through them
+- **Fake disassembly ticker** — because ambiance
+- **1000+ rotating RE quotes** — wisdom from the trenches, one every 3 seconds
+- **Fake register panel** — values that actually correlate with the music
+- **Magic byte detection** — identifies your file format from the header
 
-### Binary Analysis
+---
 
-The file is divided into 256-byte sections. For each section, cheapbin computes:
+## How the sausage is made
 
-- **Shannon entropy** (0–8 bits) — measures randomness/compressibility
-- **Byte mean** — average byte value
-- **Variance** — how spread out the byte values are
-- **Zero ratio** — fraction of null bytes
+The binary gets divided into 256-byte chunks. Each chunk's entropy, byte distribution, and bit patterns become musical parameters — tempo, key, scale, chord progression, drum rhythm, waveform shape. High-entropy sections (compressed/encrypted data) play faster and more chaotic. Null-heavy sections breathe. The melody is always pentatonic minor so it never sounds like garbage, no matter what file you throw at it.
 
-### Mapping to Music
+Six synthesis channels: lead (square/saw/tri), harmony, bass (triangle), arpeggio (25% pulse), pad, and a noise drum channel with kick/snare/hat patterns derived from the file's bit patterns. ADSR envelopes, PWM, vibrato, portamento, delay/echo, soft clipping. All running at 44100 Hz through Core Audio.
 
-| Statistic | Musical Parameter |
-|-----------|-------------------|
-| Entropy | Tempo (100–160 BPM) — high entropy = faster |
-| Byte mean | Root key — `mean % 12` selects the tonal center |
-| Variance | Waveform — low=triangle, medium=square, high=sawtooth |
-| Zero ratio | Rests — null-heavy regions become silence |
-| Individual bytes | Melody notes on a pentatonic minor scale |
-| Bit patterns | Drum triggers (kick, snare, hi-hat) |
+The whole point is that *different files sound genuinely different*, and that it sounds good doing it.
 
-All melody notes are quantized to the **pentatonic minor scale**, which guarantees pleasant-sounding output regardless of input data. A running-average filter smooths pitch transitions.
+---
 
-### 4-Channel Synthesis (NES-inspired)
+## Sounds good on
 
-| Channel | Waveform | Role |
-|---------|----------|------|
-| CH1 — Melody | Square/Saw/Tri (data-driven) | Lead melody from byte values |
-| CH2 — Bass | Triangle | Root + fifth alternation |
-| CH3 — Arpeggio | Square (25% duty) | Minor chord arpeggiation |
-| CH4 — Drums | Noise | Kick/snare/hat from bit patterns |
+- Kernel extensions (`.kext`)
+- Firmware blobs
+- Fat Mach-O binaries
+- Stripped binaries (especially stripped binaries)
+- Malware samples *(not that you have any)*
+- Anything with high entropy in weird places
 
-Each channel has its own **ADSR envelope** for authentic chiptune attack and decay characteristics. Audio is synthesized at 44100 Hz, 16-bit mono, and played through Core Audio's AudioQueue API.
-
-### Terminal UI
-
-The display shows real-time:
-- Per-channel level meters with color coding
-- Animated waveform visualization
-- Current note, waveform type, and BPM
-- Progress bar through the binary file
-- Playback controls
-
-## Architecture
-
-```
-src/
-├── main.c       — CLI parsing, main loop, signal handling
-├── reader.c/h   — Binary file I/O
-├── analyzer.c/h — Per-section entropy, mean, variance computation
-├── composer.c/h — Binary → musical event sequence mapping
-├── synth.c/h    — Waveform generators, ADSR envelopes, 4-channel mixer
-├── audio.c/h    — Core Audio AudioQueue wrapper
-└── display.c/h  — ANSI terminal UI and visualizer
-```
-
-## Dependencies
-
-- **macOS** (Core Audio / AudioToolbox framework)
-- **C11** compiler
-- **CMake** ≥ 3.20
-- No external libraries
+---
 
 ## License
 
 Public domain. Do whatever you want with it.
+
+---
+
+*"Every binary has a melody waiting to be heard."*
