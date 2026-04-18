@@ -2,7 +2,7 @@
 
 > *You, reverser — ever wondered what `/bin/ls` sounded like?*
 
-> **macOS only.** Uses Core Audio. Won't build on Linux or Windows. Sorry.
+> **macOS & Linux.** Uses Core Audio on macOS, ALSA on Linux. Won't build on Windows.
 
 No? Well, you're about to find out anyway.
 
@@ -20,7 +20,7 @@ No? Well, you're about to find out anyway.
 cmake -B build && cmake --build build
 ```
 
-Needs macOS (uses Core Audio), CMake, and a C11 compiler. That's it. No dependencies.
+Needs macOS or Linux, CMake, and a C11 compiler. That's it. No dependencies.
 
 ---
 
