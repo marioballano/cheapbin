@@ -6,6 +6,8 @@
 
 No? Well, you're about to find out anyway.
 
+![cheapbin](assets/cheapbin.png)
+
 **cheapbin** turns any binary file into chiptune music. Feed it an executable, a firmware dump, a JPEG, a kernel module — doesn't matter. It reads the bytes, finds the melody hiding inside, and plays it back as 8-bit NES-style chiptune through your speakers while a hacker terminal UI scrolls fake disassembly at you.
 
 `/bin/ls` and `/bin/cat` sound different. Your malware sample and a JPEG sound different. Every binary has a unique musical fingerprint. This program finds it.
