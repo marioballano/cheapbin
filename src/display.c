@@ -744,6 +744,8 @@ static void draw_status(int row, const SynthState *s)
         FG(80, 80, 100);
         buf_printf("space" RESET " resume  ");
         FG(80, 80, 100);
+        buf_printf("h/\xe2\x86\x90  l/\xe2\x86\x92" RESET " seek   ");
+        FG(80, 80, 100);
         buf_printf("c" RESET " chip   ");
         FG(80, 80, 100);
         buf_printf("s" RESET " style  ");
@@ -752,6 +754,8 @@ static void draw_status(int row, const SynthState *s)
     } else if (s->finished) {
         FG(0, 255, 100);
         buf_printf(BOLD "✓ COMPLETE " RESET);
+        FG(80, 80, 100);
+        buf_printf("h/\xe2\x86\x90  l/\xe2\x86\x92" RESET " seek   ");
         FG(80, 80, 100);
         buf_printf("c" RESET " chip   ");
         FG(80, 80, 100);
@@ -763,6 +767,8 @@ static void draw_status(int row, const SynthState *s)
         buf_printf(BOLD "▶ PLAYING  " RESET);
         FG(80, 80, 100);
         buf_printf("space" RESET " pause   ");
+        FG(80, 80, 100);
+        buf_printf("h/\xe2\x86\x90  l/\xe2\x86\x92" RESET " seek   ");
         FG(80, 80, 100);
         buf_printf("c" RESET " chip   ");
         FG(80, 80, 100);
