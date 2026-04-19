@@ -2,13 +2,13 @@
 
 > *You, reverser — ever wondered what `/bin/ls` sounded like?*
 
-> **macOS & Linux.** Uses Core Audio on macOS, ALSA on Linux. Won't build on Windows.
-
 No? Well, you're about to find out anyway.
 
 ![cheapbin](assets/cheapbin.png)
 
 **cheapbin** turns any binary file into chiptune music. Feed it an executable, a firmware dump, a JPEG, a kernel module — doesn't matter. It reads the bytes, finds the melody hiding inside, and plays it back through your speakers while a hacker terminal UI scrolls fake disassembly at you.
+
+> **macOS & Linux.** Uses Core Audio on macOS, ALSA on Linux. Won't build on Windows.
 
 It ships with **4 hardware sound chip emulations** — each file plays the same song, but filtered through the character of classic chip hardware:
 
