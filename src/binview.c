@@ -205,6 +205,15 @@ uint64_t    binview_text_addr(const BinView *bv){ return bv ? bv->text_addr : 0;
 size_t      binview_text_size(const BinView *bv){ return bv ? bv->text_size : 0; }
 uint64_t    binview_pc(const BinView *bv)       { return bv ? bv->pc : 0; }
 
+size_t binview_file_bytes(const BinView *bv, size_t offset, uint8_t *out, size_t n)
+{
+    if (!bv || !bv->data || !out || n == 0 || offset >= bv->size) return 0;
+    size_t avail = bv->size - offset;
+    if (n > avail) n = avail;
+    memcpy(out, bv->data + offset, n);
+    return n;
+}
+
 size_t binview_read(BinView *bv, uint64_t addr, uint8_t *out, size_t n)
 {
     if (!bv || !out || n == 0) return 0;

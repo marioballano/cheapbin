@@ -42,6 +42,10 @@ uint64_t    binview_pc(const BinView *bv);
  * offset wrapped into the buffer. Returns bytes actually written. */
 size_t      binview_read(BinView *bv, uint64_t addr, uint8_t *out, size_t n);
 
+/* Read up to n bytes from file offset (raw data, never via r2 virtual address).
+ * Safe to call for header/magic bytes regardless of r2 mode. */
+size_t      binview_file_bytes(const BinView *bv, size_t offset, uint8_t *out, size_t n);
+
 /* Step one ESIL instruction and refresh the cached register snapshot.
  * pc_addr anchors the program counter before the step so emulation tracks
  * a chosen address instead of drifting into unreachable code; pass 0 to

@@ -297,7 +297,7 @@ static void draw_file_info(int row, const SynthState *s)
     FG(60, 60, 80);
     buf_printf("MAGIC ");
     uint8_t magic[4] = {0};
-    size_t mn = binview_read(s_bv, 0, magic, 4);
+    size_t mn = binview_file_bytes(s_bv, 0, magic, 4);
     if (mn >= 4) {
         FG(100, 140, 120);
         buf_printf("%02X %02X %02X %02X",
