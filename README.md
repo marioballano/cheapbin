@@ -60,6 +60,7 @@ Needs macOS or Linux, CMake, and a C11 compiler. That's it. No dependencies.
 ./build/cheapbin --chip genesis <any file>
 ./build/cheapbin --style synthwave <any file>
 ./build/cheapbin --style doom --chip sid <any file>
+./build/cheapbin --no-r2 <any file>     # skip radare2; use built-in fake disasm
 ```
 
 ```bash
@@ -71,7 +72,32 @@ Needs macOS or Linux, CMake, and a C11 compiler. That's it. No dependencies.
 ./build/cheapbin ~/Downloads/suspicious.pdf
 ```
 
-`space` to pause. `c` to cycle sound chips. `s` to cycle music styles. `q` to quit.
+`space` to pause. `h`/`←` seek back 5 s. `l`/`→` seek forward 5 s. `c` to cycle sound chips. `s` to cycle music styles. `q` to quit.
+
+---
+
+## radare2 integration
+
+When `radare2` is installed and the input file is a recognised executable (ELF, Mach-O, PE, DEX…), cheapbin spawns an r2 subprocess via r2pipe and uses it as a live analysis backend:
+
+| Feature | With r2 | Without r2 |
+|---------|---------|------------|
+| Disassembly panel | Real disassembly for the detected arch/bits | Rotating fake disassembly strings |
+| Register panel | Arch-appropriate live register names and ESIL-stepped values (x86-64 `rax`…`rip`, ARM64 `x0`…`pc`, etc.) | Pseudo-random values driven by file bytes |
+| Hex / byte reads | Actual bytes read from the mapped binary at the current PC | File bytes wrapped modulo file size |
+| PC tracking | Walks the real `.text` section via `aes` ESIL emulation, anchored to `entry0` | Counter that ticks up by a few bytes each frame |
+
+r2 is **enabled by default** and **silently disabled** if:
+- `radare2` is not in `$PATH`,
+- the file has no recognised entry point (`entry0` returns 0),
+- or the r2 subprocess crashes or closes its pipe.
+
+Force the fallback with `-r` / `--no-r2`:
+
+```bash
+./build/cheapbin --no-r2 /bin/ls           # fake disasm even for executables
+./build/cheapbin firmware.bin              # non-executable — fallback used automatically
+```
 
 ---
 
