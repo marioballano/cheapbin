@@ -364,9 +364,12 @@ static void draw_meters(int row, int w, const SynthState *s)
 
 static void draw_scope(int row, int w, const SynthState *s)
 {
-    int vw = w - 8;
+    /* Scope rows overlap with the right panel (disasm/regs at cols w-34..w-1
+     * when drawn). Content starts at col 7 (after "%02X│" prefix); stop two
+     * cols before the right panel, or the terminal edge when it's hidden. */
+    int right_limit = w >= 74 ? w - 36 : w - 2;
+    int vw = right_limit - 6;
     if (vw < 20) vw = 20;
-    if (vw > 80) vw = 80;
     int vh = 7;
 
     MOVETO(row, 4);
@@ -379,24 +382,29 @@ static void draw_scope(int row, int w, const SynthState *s)
     for (int r = 0; r < vh; r++) {
         MOVETO(row + 1 + r, 4);
         FG(40, 40, 60);
-        buf_printf("%02X│", (unsigned)((r * 0x10 + s_frame) & 0xFF));
+        unsigned tick = s->paused ? 0 : (unsigned)s_frame;
+        buf_printf("%02X│", (r * 0x10 + tick) & 0xFF);
 
         float rl = 1.0f - (float)r / (float)(vh - 1);
 
         for (int c = 0; c < vw; c++) {
             float t  = (float)c / (float)vw;
-            float ph = (float)s_frame * 0.08f;
+            float ph = s->paused ? 0.0f : (float)s_frame * 0.08f;
 
-            float f1 = 2.0f + s->ch_levels[CH_LEAD] * 8.0f;
-            float f2 = 1.0f + s->ch_levels[CH_BASS] * 4.0f;
-            float f3 = 3.0f + s->ch_levels[CH_ARPEGGIO] * 6.0f;
-
-            float wave = 0.5f
-                + 0.22f * sinf(t * f1 * 6.2832f + ph)
-                + 0.13f * sinf(t * f2 * 6.2832f + ph * 0.7f)
-                + 0.08f * sinf(t * f3 * 6.2832f + ph * 1.3f)
-                + s->ch_levels[CH_DRUMS] * 0.15f
-                  * sinf(t * 2.0f * 6.2832f + ph * 2.0f);
+            float wave;
+            if (s->paused) {
+                wave = 0.5f;
+            } else {
+                float f1 = 2.0f + s->ch_levels[CH_LEAD] * 8.0f;
+                float f2 = 1.0f + s->ch_levels[CH_BASS] * 4.0f;
+                float f3 = 3.0f + s->ch_levels[CH_ARPEGGIO] * 6.0f;
+                wave = 0.5f
+                    + 0.22f * sinf(t * f1 * 6.2832f + ph)
+                    + 0.13f * sinf(t * f2 * 6.2832f + ph * 0.7f)
+                    + 0.08f * sinf(t * f3 * 6.2832f + ph * 1.3f)
+                    + s->ch_levels[CH_DRUMS] * 0.15f
+                      * sinf(t * 2.0f * 6.2832f + ph * 2.0f);
+            }
 
             float d = fabsf(rl - wave);
 
@@ -424,11 +432,18 @@ static void draw_scope(int row, int w, const SynthState *s)
 
 /* ── Hex dump from the entrypoint exec section (or file when no r2) ── */
 
-static void draw_hex_dump(int row, int w, const SynthState *s)
+static void draw_hex_dump(int row, int w, int nrows, const SynthState *s)
 {
-    (void)w;
-    enum { NROWS = 4, BPR = 8 };
-    const int total = NROWS * BPR;
+    enum { MAX_BPR = 32, MAX_NROWS = 24 };
+    if (nrows < 1) nrows = 1;
+    if (nrows > MAX_NROWS) nrows = MAX_NROWS;
+    /* Row width = "%08llX  " (10) + "%02X " × bpr (3*bpr) + "│" + bpr + "│"
+     *           = 12 + 4*bpr. Fit between col 4 and the right panel (col
+     *           w-34 when drawn, else the terminal edge), leaving a gutter. */
+    int avail = (w >= 74 ? w - 34 : w) - 4 - 2;
+    int bpr = 4;
+    while (bpr * 2 <= MAX_BPR && 12 + 4 * (bpr * 2) <= avail) bpr *= 2;
+    const int total = nrows * bpr;
 
     MOVETO(row, 4);
     FG(80, 80, 100);
@@ -450,18 +465,18 @@ static void draw_hex_dump(int row, int w, const SynthState *s)
         size_t fsz = s_filesize > (size_t)total ? s_filesize - (size_t)total : 0;
         base = (uint64_t)(s->progress * (float)fsz);
     }
-    base &= ~(uint64_t)0xF;
+    base &= ~(uint64_t)(bpr - 1);
 
-    uint8_t buf[NROWS * BPR];
-    size_t  got = binview_read(s_bv, base, buf, sizeof(buf));
+    uint8_t buf[MAX_NROWS * MAX_BPR];
+    size_t  got = binview_read(s_bv, base, buf, (size_t)total);
 
-    for (int r = 0; r < NROWS; r++) {
+    for (int r = 0; r < nrows; r++) {
         MOVETO(row + 1 + r, 4);
         FG(60, 60, 80);
-        buf_printf("%08llX  ", (unsigned long long)(base + (uint64_t)(r * BPR)));
+        buf_printf("%08llX  ", (unsigned long long)(base + (uint64_t)(r * bpr)));
 
-        for (int b = 0; b < BPR; b++) {
-            size_t idx = (size_t)(r * BPR + b);
+        for (int b = 0; b < bpr; b++) {
+            size_t idx = (size_t)(r * bpr + b);
             if (idx < got) {
                 uint8_t v = buf[idx];
                 if (v == 0)          FG(40, 40, 50);
@@ -477,8 +492,8 @@ static void draw_hex_dump(int row, int w, const SynthState *s)
 
         FG(50, 50, 70);
         buf_printf("│");
-        for (int b = 0; b < BPR; b++) {
-            size_t idx = (size_t)(r * BPR + b);
+        for (int b = 0; b < bpr; b++) {
+            size_t idx = (size_t)(r * bpr + b);
             if (idx < got) {
                 uint8_t v = buf[idx];
                 if (v >= 0x20 && v < 0x7F) {
@@ -845,21 +860,31 @@ void display_update(const SynthState *s)
     /* Oscilloscope */
     draw_scope(15, w, s);
 
+    /* Bottom widgets stick to the terminal's bottom edge when the window
+     * is taller than the original 33-row layout; the hex dump fills the
+     * gap between its label (row 23) and the quote line. */
+    int quote_row    = h >= 33 ? h - 4 : 29;
+    if (quote_row < 29) quote_row = 29;
+    int progress_row = quote_row + 2;
+    int status_row   = progress_row + 2;
+    int hex_rows     = quote_row - 25;
+    if (hex_rows < 4) hex_rows = 4;
+
     /* Hex dump */
-    draw_hex_dump(23, w, s);
+    draw_hex_dump(23, w, hex_rows, s);
 
     /* Right-side panels */
     draw_disasm(8, w, s);
     draw_regs(18, w);
 
     /* Quote */
-    draw_quote(29, w);
+    draw_quote(quote_row, w);
 
     /* Progress */
-    draw_progress(31, w, s);
+    draw_progress(progress_row, w, s);
 
     /* Status */
-    draw_status(33, s);
+    draw_status(status_row, s);
 
     /* Single atomic flush */
     buf_flush();
