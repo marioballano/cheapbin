@@ -104,4 +104,10 @@ void synth_apply_style(SynthState *s, StyleType style,
                        const Composition *original);
 void synth_render(SynthState *s, int16_t *buffer, int num_samples);
 
+/* Seek playback by tick_delta (positive = forward, negative = backward).
+   Safe to call from the UI thread while audio is rendering — the
+   audio callback reads the same fields synth_apply_style() already
+   touches, and uses no internal locking by design. */
+void synth_seek(SynthState *s, int tick_delta);
+
 #endif

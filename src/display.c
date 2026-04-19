@@ -1,6 +1,8 @@
 #include "display.h"
 #include "chipemu.h"
 #include "re_data.h"
+#include "binview.h"
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,8 +100,7 @@ static const char *CH_NAMES[] = {
 
 /* ── Disasm / quote state ──────────────────────────────────────────── */
 
-#define TICKER_LINES 8
-static int s_ticker_idx;
+#define TICKER_LINES_MAX BV_MAX_LINES
 
 static int  s_quote_idx;
 static int  s_quote_timer;
@@ -107,11 +108,10 @@ static int  s_quote_timer;
 
 /* ── Shared state ──────────────────────────────────────────────────── */
 
-static char          s_filename[256];
-static size_t        s_filesize;
-static int           s_frame;
-static const uint8_t *s_file_data;
-static size_t        s_file_data_size;
+static char     s_filename[256];
+static size_t   s_filesize;
+static int      s_frame;
+static BinView *s_bv;
 
 /* ── PRNG ──────────────────────────────────────────────────────────── */
 
@@ -127,20 +127,17 @@ static uint32_t rng(void)
 
 /* ── Init / cleanup / poll ─────────────────────────────────────────── */
 
-void display_init(const char *filename, size_t filesize,
-                  const uint8_t *data, size_t data_size)
+void display_init(const char *filename, size_t filesize, BinView *bv)
 {
     get_term_size();
     strncpy(s_filename, filename, sizeof(s_filename) - 1);
     s_filename[sizeof(s_filename) - 1] = '\0';
-    s_filesize   = filesize;
-    s_file_data  = data;
-    s_file_data_size = data_size;
-    s_frame      = 0;
-    s_pos        = 0;
-    s_rng        = (uint32_t)(filesize ^ 0xDEADBEEF);
-    s_ticker_idx = 0;
-    s_quote_idx  = (int)(rng() % NUM_RE_QUOTES);
+    s_filesize    = filesize;
+    s_bv          = bv;
+    s_frame       = 0;
+    s_pos         = 0;
+    s_rng         = (uint32_t)(filesize ^ 0xDEADBEEF);
+    s_quote_idx   = (int)(rng() % NUM_RE_QUOTES);
     s_quote_timer = QUOTE_DURATION;
 
     tcgetattr(STDIN_FILENO, &s_orig_termios);
@@ -169,8 +166,23 @@ void display_cleanup(void)
 int display_poll_key(void)
 {
     unsigned char c;
-    if (read(STDIN_FILENO, &c, 1) == 1) return c;
-    return 0;
+    if (read(STDIN_FILENO, &c, 1) != 1) return 0;
+    if (c != 0x1B) return c;
+
+    /* Possible CSI/SS3 escape sequence — bytes arrive back-to-back, so a
+     * non-blocking read here picks them up. A lone ESC press leaves the
+     * follow-ups empty and we return 0x1B unchanged. */
+    unsigned char b1, b2;
+    if (read(STDIN_FILENO, &b1, 1) != 1) return 0x1B;
+    if (b1 != '[' && b1 != 'O') return b1;
+    if (read(STDIN_FILENO, &b2, 1) != 1) return 0x1B;
+    switch (b2) {
+    case 'A': return KEY_UP;
+    case 'B': return KEY_DOWN;
+    case 'C': return KEY_RIGHT;
+    case 'D': return KEY_LEFT;
+    default:  return 0;
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -280,58 +292,27 @@ static void draw_file_info(int row, const SynthState *s)
         buf_printf("NOTE " DIM "---" RESET);
     }
 
-    /* Magic bytes — real bytes from the file + recognized format label */
+    /* Magic bytes — first 4 file bytes plus the binview-detected format */
     MOVETO(row + 1, 48);
     FG(60, 60, 80);
     buf_printf("MAGIC ");
-    if (s_file_data && s_file_data_size >= 4) {
-        const uint8_t *m = s_file_data;
+    uint8_t magic[4] = {0};
+    size_t mn = binview_read(s_bv, 0, magic, 4);
+    if (mn >= 4) {
         FG(100, 140, 120);
         buf_printf("%02X %02X %02X %02X",
-                   m[0], m[1], m[2], m[3]);
-
-        /* Identify common formats from magic bytes */
-        const char *fmt = NULL;
-        if (m[0] == 0xCF && m[1] == 0xFA && m[2] == 0xED && m[3] == 0xFE)
-            fmt = "Mach-O 64";
-        else if (m[0] == 0xCE && m[1] == 0xFA && m[2] == 0xED && m[3] == 0xFE)
-            fmt = "Mach-O 32";
-        else if (m[0] == 0xCA && m[1] == 0xFE && m[2] == 0xBA && m[3] == 0xBE)
-            fmt = "Fat Mach-O";
-        else if (m[0] == 0xFE && m[1] == 0xED && m[2] == 0xFA && m[3] == 0xCF)
-            fmt = "Mach-O 64 BE";
-        else if (m[0] == 0x7F && m[1] == 'E' && m[2] == 'L' && m[3] == 'F')
-            fmt = "ELF";
-        else if (m[0] == 'M' && m[1] == 'Z')
-            fmt = "PE/MZ";
-        else if (m[0] == 0x89 && m[1] == 'P' && m[2] == 'N' && m[3] == 'G')
-            fmt = "PNG";
-        else if (m[0] == 0xFF && m[1] == 0xD8 && m[2] == 0xFF)
-            fmt = "JPEG";
-        else if (m[0] == 'G' && m[1] == 'I' && m[2] == 'F')
-            fmt = "GIF";
-        else if (m[0] == 'P' && m[1] == 'K' && m[2] == 0x03 && m[3] == 0x04)
-            fmt = "ZIP";
-        else if (m[0] == 0x1F && m[1] == 0x8B)
-            fmt = "gzip";
-        else if (m[0] == 'B' && m[1] == 'Z' && m[2] == 'h')
-            fmt = "bzip2";
-        else if (m[0] == 0xFD && m[1] == '7' && m[2] == 'z' && m[3] == 'X')
-            fmt = "XZ";
-        else if (m[0] == 0x25 && m[1] == 0x50 && m[2] == 0x44 && m[3] == 0x46)
-            fmt = "PDF";
-        else if (m[0] == 'd' && m[1] == 'e' && m[2] == 'x' && m[3] == 0x0A)
-            fmt = "DEX";
-        else if (m[0] == 0x4D && m[1] == 0x53 && m[2] == 0x43 && m[3] == 0x46)
-            fmt = "CAB";
-        else if (m[0] == 0x52 && m[1] == 0x61 && m[2] == 0x72 && m[3] == 0x21)
-            fmt = "RAR";
-
-        if (fmt) {
+                   magic[0], magic[1], magic[2], magic[3]);
+        const char *fmt = binview_format(s_bv);
+        if (fmt && *fmt) {
             buf_printf(" ");
             FG(0, 200, 150);
             buf_printf(BOLD "[%s]" RESET, fmt);
         }
+    }
+    if (binview_has_r2(s_bv)) {
+        buf_printf(" ");
+        FG(255, 100, 0);
+        buf_printf(BOLD "r2" RESET);
     }
     buf_printf(RESET);
 }
@@ -396,12 +377,16 @@ static void draw_meters(int row, int w, const SynthState *s)
 
 /* ── Oscilloscope ──────────────────────────────────────────────────── */
 
-static void draw_scope(int row, int w, const SynthState *s)
+static void draw_scope(int row, int w, int nrows, const SynthState *s)
 {
-    int vw = w - 8;
+    /* Scope rows overlap with the right panel (disasm/regs at cols w-34..w-1
+     * when drawn). Content starts at col 7 (after "%02X│" prefix); stop two
+     * cols before the right panel, or the terminal edge when it's hidden. */
+    int right_limit = w >= 74 ? w - 36 : w - 2;
+    int vw = right_limit - 6;
     if (vw < 20) vw = 20;
-    if (vw > 80) vw = 80;
-    int vh = 7;
+    int vh = nrows;
+    if (vh < 2) vh = 2;
 
     MOVETO(row, 4);
     FG(80, 80, 100);
@@ -413,24 +398,29 @@ static void draw_scope(int row, int w, const SynthState *s)
     for (int r = 0; r < vh; r++) {
         MOVETO(row + 1 + r, 4);
         FG(40, 40, 60);
-        buf_printf("%02X│", (unsigned)((r * 0x10 + s_frame) & 0xFF));
+        unsigned tick = s->paused ? 0 : (unsigned)s_frame;
+        buf_printf("%02X│", (r * 0x10 + tick) & 0xFF);
 
         float rl = 1.0f - (float)r / (float)(vh - 1);
 
         for (int c = 0; c < vw; c++) {
             float t  = (float)c / (float)vw;
-            float ph = (float)s_frame * 0.08f;
+            float ph = s->paused ? 0.0f : (float)s_frame * 0.08f;
 
-            float f1 = 2.0f + s->ch_levels[CH_LEAD] * 8.0f;
-            float f2 = 1.0f + s->ch_levels[CH_BASS] * 4.0f;
-            float f3 = 3.0f + s->ch_levels[CH_ARPEGGIO] * 6.0f;
-
-            float wave = 0.5f
-                + 0.22f * sinf(t * f1 * 6.2832f + ph)
-                + 0.13f * sinf(t * f2 * 6.2832f + ph * 0.7f)
-                + 0.08f * sinf(t * f3 * 6.2832f + ph * 1.3f)
-                + s->ch_levels[CH_DRUMS] * 0.15f
-                  * sinf(t * 2.0f * 6.2832f + ph * 2.0f);
+            float wave;
+            if (s->paused) {
+                wave = 0.5f;
+            } else {
+                float f1 = 2.0f + s->ch_levels[CH_LEAD] * 8.0f;
+                float f2 = 1.0f + s->ch_levels[CH_BASS] * 4.0f;
+                float f3 = 3.0f + s->ch_levels[CH_ARPEGGIO] * 6.0f;
+                wave = 0.5f
+                    + 0.22f * sinf(t * f1 * 6.2832f + ph)
+                    + 0.13f * sinf(t * f2 * 6.2832f + ph * 0.7f)
+                    + 0.08f * sinf(t * f3 * 6.2832f + ph * 1.3f)
+                    + s->ch_levels[CH_DRUMS] * 0.15f
+                      * sinf(t * 2.0f * 6.2832f + ph * 2.0f);
+            }
 
             float d = fabsf(rl - wave);
 
@@ -456,12 +446,22 @@ static void draw_scope(int row, int w, const SynthState *s)
     }
 }
 
-/* ── Hex dump of real file bytes ───────────────────────────────────── */
+/* ── Hex dump from the entrypoint exec section (or file when no r2) ── */
 
-static void draw_hex_dump(int row, int w, const SynthState *s)
+static void draw_hex_dump(int row, int w, int nrows, const SynthState *s)
 {
-    (void)w;
-    int nrows = 4, bpr = 8;
+    enum { MAX_BPR = 64, MAX_NROWS = 24 };
+    if (nrows < 1) nrows = 1;
+    if (nrows > MAX_NROWS) nrows = MAX_NROWS;
+    /* Row width = "%08llX  " (10) + "%02X " × bpr (3*bpr) + "│" + bpr + "│"
+     *           = 12 + 4*bpr. Span the whole width from col 4 up to the
+     * disasm/regs column (col w-34 when that panel is visible) — pick the
+     * largest integer bpr that fits so the block fills the row. */
+    int avail = (w >= 74 ? w - 34 : w) - 4 - 1;
+    int bpr = (avail - 12) / 4;
+    if (bpr < 4)        bpr = 4;
+    if (bpr > MAX_BPR)  bpr = MAX_BPR;
+    const int total = nrows * bpr;
 
     MOVETO(row, 4);
     FG(80, 80, 100);
@@ -470,21 +470,33 @@ static void draw_hex_dump(int row, int w, const SynthState *s)
     int si = (s_frame / 60) % (int)NUM_SECTION_NAMES;
     buf_printf("[%s]" RESET, SECTION_NAMES[si]);
 
-    size_t off = 0;
-    if (s_file_data_size > 0) {
-        off = (size_t)(s->progress * (float)(s_file_data_size > 64 ? s_file_data_size - 64 : 0));
-        off &= ~(size_t)0xF;
+    /* When r2 is active, scroll across the exec section anchored at entry.
+     * Otherwise fall back to walking the raw file by playback progress. */
+    uint64_t base;
+    if (binview_has_r2(s_bv)) {
+        uint64_t text = binview_text_addr(s_bv);
+        size_t   tsz  = binview_text_size(s_bv);
+        if (tsz < (size_t)total) tsz = (size_t)total;
+        uint64_t span = (uint64_t)(tsz - (size_t)total);
+        base = text + (uint64_t)(s->progress * (float)span);
+    } else {
+        size_t fsz = s_filesize > (size_t)total ? s_filesize - (size_t)total : 0;
+        base = (uint64_t)(s->progress * (float)fsz);
     }
+    base -= base % (uint64_t)bpr;   /* align to row boundary (bpr may be non-power-of-2) */
+
+    uint8_t buf[MAX_NROWS * MAX_BPR];
+    size_t  got = binview_read(s_bv, base, buf, (size_t)total);
 
     for (int r = 0; r < nrows; r++) {
         MOVETO(row + 1 + r, 4);
         FG(60, 60, 80);
-        buf_printf("%08zX  ", off + (size_t)(r * bpr));
+        buf_printf("%08llX  ", (unsigned long long)(base + (uint64_t)(r * bpr)));
 
         for (int b = 0; b < bpr; b++) {
-            size_t idx = off + (size_t)(r * bpr + b);
-            if (s_file_data && idx < s_file_data_size) {
-                uint8_t v = s_file_data[idx];
+            size_t idx = (size_t)(r * bpr + b);
+            if (idx < got) {
+                uint8_t v = buf[idx];
                 if (v == 0)          FG(40, 40, 50);
                 else if (v == 0xFF)  FG(255, 100, 100);
                 else if (v >= 0x20 && v < 0x7F) FG(0, 200, 150);
@@ -499,9 +511,9 @@ static void draw_hex_dump(int row, int w, const SynthState *s)
         FG(50, 50, 70);
         buf_printf("│");
         for (int b = 0; b < bpr; b++) {
-            size_t idx = off + (size_t)(r * bpr + b);
-            if (s_file_data && idx < s_file_data_size) {
-                uint8_t v = s_file_data[idx];
+            size_t idx = (size_t)(r * bpr + b);
+            if (idx < got) {
+                uint8_t v = buf[idx];
                 if (v >= 0x20 && v < 0x7F) {
                     FG(0, 180, 130);
                     buf_printf("%c", (char)v);
@@ -520,34 +532,50 @@ static void draw_hex_dump(int row, int w, const SynthState *s)
 
 /* ── Disassembly ticker (right panel) ──────────────────────────────── */
 
-static void draw_disasm(int row, int w)
+static void draw_disasm(int row, int w, int nrows, const SynthState *s)
 {
     int tw = 32;
     int cx = w - tw - 2;
     if (cx < 40) return;
+    if (nrows < 1) nrows = 1;
+    if (nrows > TICKER_LINES_MAX) nrows = TICKER_LINES_MAX;
+
+    /* Step ESIL once every 4 frames for a calm scroll. Anchor PC to the
+     * same address the hex dump is showing so emulation tracks playback
+     * progress instead of walking off into a dead end. */
+    if ((s_frame & 3) == 0) {
+        uint64_t music_pc = 0;
+        if (binview_has_r2(s_bv)) {
+            uint64_t text = binview_text_addr(s_bv);
+            size_t   tsz  = binview_text_size(s_bv);
+            uint64_t span = tsz > 16 ? (uint64_t)(tsz - 16) : 0;
+            music_pc = text + (uint64_t)(s->progress * (float)span);
+        }
+        binview_step(s_bv, music_pc);
+    }
 
     MOVETO(row, cx);
     FG(70, 70, 90);
     buf_printf("┌─ DISASM ");
-    for (int i = 0; i < tw - 10; i++) buf_printf("─");
+    for (int i = 0; i < tw - 13; i++) buf_printf("─");
     buf_printf("┐");
 
-    if (s_frame % 4 == 0) {
-        s_ticker_idx++;
-        if (s_ticker_idx >= (int)NUM_FAKE_DISASM)
-            s_ticker_idx = 0;
-    }
+    char     lines[TICKER_LINES_MAX][BV_LINE_LEN];
+    uint64_t addrs[TICKER_LINES_MAX];
+    uint64_t base = binview_pc(s_bv);
+    if (base == 0) base = binview_text_addr(s_bv);
+    int n = binview_disasm(s_bv, base, nrows, addrs, lines);
 
-    for (int ln = 0; ln < TICKER_LINES; ln++) {
+    for (int ln = 0; ln < nrows; ln++) {
         MOVETO(row + 1 + ln, cx);
         FG(40, 40, 60);
         buf_printf("│");
 
-        int di = (s_ticker_idx + ln) % (int)NUM_FAKE_DISASM;
-        int addr = 0x401000 + di * 4 + s_frame;
+        const char *text = ln < n ? lines[ln] : "";
+        uint64_t    addr = ln < n ? addrs[ln] : 0;
 
         FG(80, 80, 100);
-        buf_printf("%04x: ", addr & 0xFFFF);
+        buf_printf("%04x: ", (unsigned)(addr & 0xFFFF));
 
         if (ln == 0) {
             FG(0, 255, 180);
@@ -556,55 +584,73 @@ static void draw_disasm(int row, int w)
             buf_printf("  ");
         }
 
-        char instr[32];
-        snprintf(instr, sizeof(instr), "%-20s", FAKE_DISASM[di]);
         if (ln == 0)      FG(0, 255, 180);
         else if (ln < 3)  FG(0, 150, 100);
         else              FG(50, 70, 60);
-        buf_printf("%.20s" RESET, instr);
+        buf_printf("%-20.20s" RESET, text);
 
         FG(40, 40, 60);
         buf_printf("│");
     }
 
-    MOVETO(row + TICKER_LINES + 1, cx);
+    MOVETO(row + nrows + 1, cx);
     FG(40, 40, 60);
     buf_printf("└");
-    for (int i = 0; i < tw; i++) buf_printf("─");
+    for (int i = 0; i < tw - 4; i++) buf_printf("─");
     buf_printf("┘" RESET);
 }
 
-/* ── Register panel (right side) ───────────────────────────────────── */
+/* ── Register panel (right side, sized to match the disasm box) ──── */
 
-static void draw_regs(int row, int w, const SynthState *s)
+#define REG_ROWS 8
+#define REG_COLS 2
+
+static void draw_regs(int row, int w)
 {
-    int cx = w - 34;
+    int tw = 32;
+    int cx = w - tw - 2;
     if (cx < 40) return;
 
     MOVETO(row, cx);
     FG(70, 70, 90);
-    buf_printf("┌─ REGS ────────────────────┐");
+    buf_printf("┌─ REGS ");
+    for (int i = 0; i < tw - 11; i++) buf_printf("─");
+    buf_printf("┐");
 
-    for (int i = 0; i < 4; i++) {
-        MOVETO(row + 1 + i, cx);
+    BvReg regs[BV_MAX_REGS];
+    int   nregs = binview_regs(s_bv, regs, BV_MAX_REGS);
+
+    for (int r = 0; r < REG_ROWS; r++) {
+        MOVETO(row + 1 + r, cx);
         FG(40, 40, 60);
         buf_printf("│ ");
-        for (int j = 0; j < 2; j++) {
-            int ri = ((s_frame / 3 + i * 2 + j) * 7) % (int)NUM_REGISTERS;
-            uint32_t val = rng();
-            if (j == 0) val = (uint32_t)(s->ch_levels[i % NUM_CHANNELS] * 0xFFFF);
+        for (int c = 0; c < REG_COLS; c++) {
+            int idx = r * REG_COLS + c;
+            char up[BV_REG_NAME];
+            up[0] = '\0';
+            if (idx < nregs) {
+                size_t nl = strlen(regs[idx].name);
+                if (nl >= sizeof(up)) nl = sizeof(up) - 1;
+                for (size_t k = 0; k < nl; k++)
+                    up[k] = (char)toupper((unsigned char)regs[idx].name[k]);
+                up[nl] = '\0';
+            }
+            uint32_t val = idx < nregs ? regs[idx].value : 0;
             FG(100, 120, 140);
-            buf_printf("%-4s", REGISTERS[ri]);
+            buf_printf("%-6s", up);
             FG(0, 180, 130);
-            buf_printf("%04X ", val & 0xFFFF);
+            buf_printf("%04X", val & 0xFFFF);
+            FG(40, 40, 60);
+            buf_printf(c == 0 ? "    " : " ");
         }
-        FG(40, 40, 60);
-        buf_printf("│" RESET);
+        buf_printf("  │" RESET);
     }
 
-    MOVETO(row + 5, cx);
+    MOVETO(row + REG_ROWS + 1, cx);
     FG(40, 40, 60);
-    buf_printf("└────────────────────────────┘" RESET);
+    buf_printf("└");
+    for (int i = 0; i < tw - 4; i++) buf_printf("─");
+    buf_printf("┘" RESET);
 }
 
 /* ── Rotating RE quote ─────────────────────────────────────────────── */
@@ -798,22 +844,21 @@ void display_update(const SynthState *s)
     buf_printf(HOME CLEAR);
 
     /* ---- Layout (row numbers, all 1-based) ----
-       1-3     Header box
-       4       Beat indicator
-       5-6     File info / note / magic
-       7       (blank)
-       8-13    Channel meters (6 channels)
-       14      (blank)
-       15-22   Oscilloscope (1 label + 7 rows)
-       23      (blank)
-       24-28   Hex dump (1 label + 4 rows)
-       29      (blank)
-       30      Quote
-       31      (blank)
-       32      Progress bar
-       33      (blank)
-       34      Status line
-       Right panels (col w-34): disasm at row 8, regs at row 17
+       1-3                   Header box
+       4                     Beat indicator
+       5-6                   File info / note / magic
+       7                     (blank)
+       8-13                  Channel meters (6 channels)
+       14                    (blank)
+       15                    Oscilloscope label
+       16 .. 15+SN           Oscilloscope rows (SN, grows with height)
+       16+SN                 (blank)
+       17+SN                 Hex dump label
+       18+SN .. 17+SN+HN     Hex dump rows (HN, capped ~25% of screen)
+       quote_row             Quote
+       progress_row          Progress bar
+       status_row            Status line
+       Right panels (col w-34): disasm at row 8, regs at row 18
     */
 
     /* Background texture */
@@ -831,24 +876,65 @@ void display_update(const SynthState *s)
     /* Channel meters */
     draw_meters(8, w, s);
 
+    /* Bottom widgets stick to the terminal's bottom edge when the window
+     * is taller than the original 33-row layout. */
+    int quote_row    = h >= 33 ? h - 4 : 29;
+    if (quote_row < 29) quote_row = 29;
+    int progress_row = quote_row + 2;
+    int status_row   = progress_row + 2;
+
+    /* Split the middle region between scope and hex dump. The hex dump
+     * is useful but secondary — cap it near ~25 % of the terminal so the
+     * scope can stretch on tall windows where the waveform looks better
+     * with more vertical resolution. */
+    int scope_label_row = 15;
+    int middle_rows     = quote_row - scope_label_row;   /* scope+blank+hex+blank */
+    if (middle_rows < 11) middle_rows = 11;               /* fallback: SN=7 + HN=4 */
+
+    int hex_cap = h / 4;                                  /* ~25 % of screen */
+    if (hex_cap < 4) hex_cap = 4;
+
+    int hex_rows   = hex_cap;
+    int scope_rows = middle_rows - 3 - hex_rows;          /* minus label+blank+label */
+    if (scope_rows < 7) {
+        scope_rows = 7;
+        hex_rows = middle_rows - 3 - scope_rows;
+        if (hex_rows < 4) hex_rows = 4;
+    }
+
+    int hex_label_row = scope_label_row + 1 + scope_rows + 1;
+
     /* Oscilloscope */
-    draw_scope(15, w, s);
+    draw_scope(scope_label_row, w, scope_rows, s);
 
     /* Hex dump */
-    draw_hex_dump(23, w, s);
+    draw_hex_dump(hex_label_row, w, hex_rows, s);
 
-    /* Right-side panels */
-    draw_disasm(8, w);
-    draw_regs(17, w, s);
+    /* Right-side panels — regs is a fixed-size grid and stays anchored at
+     * the bottom (its bottom border sits on the row just above the quote
+     * line). Disasm stretches upward to fill the remaining vertical space,
+     * so taller terminals show more instructions. */
+    int regs_panel_rows = REG_ROWS + 2;                    /* borders included */
+    int regs_row        = quote_row - 1 - regs_panel_rows; /* top border row */
+    if (regs_row < 18) regs_row = 18;                      /* original position */
+
+    /* Disasm starts at row 8 and ends directly above regs (no gap, matching
+     * the original tight stack). nrows = regs_row - 10. */
+    int disasm_nrows = regs_row - 10;
+    if (disasm_nrows < 8)                disasm_nrows = 8;
+    if (disasm_nrows > TICKER_LINES_MAX) disasm_nrows = TICKER_LINES_MAX;
+
+    draw_disasm(8, w, disasm_nrows, s);
+    draw_regs(regs_row, w);
 
     /* Quote */
-    draw_quote(29, w);
+    draw_quote(quote_row, w);
 
     /* Progress */
-    draw_progress(31, w, s);
+    draw_progress(progress_row, w, s);
 
     /* Status */
-    draw_status(33, s);
+    draw_status(status_row, s);
 
     /* Single atomic flush */
     buf_flush();
