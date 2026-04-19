@@ -5,6 +5,7 @@
 #include "style.h"
 #include "audio.h"
 #include "display.h"
+#include "binview.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +44,8 @@ static void print_usage(const char *prog)
         "                       synthwave, dungeon, baroque, acid,\n"
         "                       doom, eurobeat, demoscene, ska,\n"
         "                       trap, progrock, none\n"
+        "    -r, --no-r2      Disable radare2 backend; use built-in fake\n"
+        "                       disasm/hex/regs instead\n"
         "    -h, --help       Show this help\n"
         "\n"
         "  \033[90mControls:\033[0m\n"
@@ -60,6 +63,7 @@ int main(int argc, char *argv[])
     const char *filepath = NULL;
     int forced_chip  = -1;   /* -1 = auto-select from file content */
     int forced_style = -1;   /* -1 = no style transformation */
+    int use_r2       = 1;    /* 0 = force fallback disasm/hex/regs */
 
     /* ── Parse arguments ── */
     for (int i = 1; i < argc; i++) {
@@ -89,6 +93,9 @@ int main(int argc, char *argv[])
                                 "         eurobeat, demoscene, ska, trap, progrock, none\n");
                 return 1;
             }
+        } else if (strcmp(argv[i], "-r") == 0 ||
+                   strcmp(argv[i], "--no-r2") == 0) {
+            use_r2 = 0;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "error: unknown option '%s'\n", argv[i]);
             print_usage(argv[0]);
@@ -155,10 +162,13 @@ int main(int argc, char *argv[])
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
+    /* ── Init binview (optional r2 backend) ── */
+    BinView *bv = binview_open(filepath, data, size, use_r2);
+
     /* ── Init display ── */
     char *pathcopy = strdup(filepath);
     const char *fname = basename(pathcopy);
-    display_init(fname, size, data, size);
+    display_init(fname, size, bv);
     free(pathcopy);
 
     /* ── Start playback ── */
@@ -215,6 +225,7 @@ int main(int argc, char *argv[])
     /* ── Cleanup ── */
     display_cleanup();
     audio_stop();
+    binview_close(bv);
     free(synth.styled_events);
     free(data);
     composition_free(&comp);

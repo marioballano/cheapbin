@@ -25,6 +25,7 @@ add_executable(cheapbin
     src/synth.c
     src/chipemu.c
     src/style.c
+    src/binview.c
     ${PLATFORM_AUDIO_SRC}
     src/display.c
 )

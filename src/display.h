@@ -2,12 +2,13 @@
 #define CHEAPBIN_DISPLAY_H
 
 #include "synth.h"
+#include "binview.h"
 #include <stdbool.h>
 
 /* Initialize the terminal UI (alt screen, raw mode, hide cursor).
-   Pass the raw file data and size for hex dump visualization. */
-void display_init(const char *filename, size_t filesize,
-                  const uint8_t *data, size_t data_size);
+   The BinView supplies file format info, hex bytes, disasm and regs;
+   it must outlive the display. */
+void display_init(const char *filename, size_t filesize, BinView *bv);
 
 /* Redraw the UI with current synth state. */
 void display_update(const SynthState *s);
