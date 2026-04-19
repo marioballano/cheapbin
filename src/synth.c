@@ -729,6 +729,58 @@ void synth_apply_style(SynthState *s, StyleType style,
     free(old_styled);
 }
 
+/* ── Seek ───────────────────────────────────────────────────────────── */
+
+void synth_seek(SynthState *s, int tick_delta)
+{
+    int total = (s->num_sections > 0)
+              ? s->sections[s->num_sections - 1].end_tick
+              : s->current_tick;
+    if (total < 1) total = 1;
+
+    int new_tick = s->current_tick + tick_delta;
+    if (new_tick < 0) new_tick = 0;
+    if (new_tick > total - 1) new_tick = total - 1;
+    s->current_tick = new_tick;
+
+    /* Reseek event_idx to the first event at or after new_tick; the next
+     * advance_tick() call will fire everything scheduled for this tick. */
+    s->event_idx = 0;
+    while (s->event_idx < s->num_events &&
+           s->events[s->event_idx].tick < s->current_tick)
+        s->event_idx++;
+
+    /* Release active envelopes so seeking doesn't leave notes stuck. */
+    for (int c = 0; c < NUM_CHANNELS; c++) {
+        if (s->channels[c].env.stage != ENV_IDLE)
+            s->channels[c].env.stage = ENV_RELEASE;
+        s->channels[c].samples_left = 0;
+    }
+    for (int d = 0; d < 4; d++)
+        s->drum_voices[d].env = 0.0f;
+
+    /* Recompute section tracking. */
+    for (int i = 0; i < s->num_sections; i++) {
+        if (s->current_tick >= s->sections[i].start_tick &&
+            s->current_tick < s->sections[i].end_tick) {
+            s->current_section = i;
+            memcpy(s->section_name, s->sections[i].name,
+                   sizeof(s->section_name));
+            s->section_name[sizeof(s->section_name) - 1] = '\0';
+            break;
+        }
+    }
+
+    /* If we seeked out of the outro, cancel the fade-out. */
+    if (s->current_section < s->num_sections &&
+        s->sections[s->current_section].type != SEC_OUTRO) {
+        s->fade_target = 1.0f;
+    }
+
+    s->tick_counter = s->samples_per_tick;
+    if (s->current_tick < total - 1) s->finished = false;
+}
+
 /* ── Tick advance ───────────────────────────────────────────────────── */
 
 static void advance_tick(SynthState *s)

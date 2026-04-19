@@ -50,6 +50,8 @@ static void print_usage(const char *prog)
         "\n"
         "  \033[90mControls:\033[0m\n"
         "    space   pause / resume\n"
+        "    h / ←   seek backward 5s\n"
+        "    l / →   seek forward 5s\n"
         "    c       cycle sound chip\n"
         "    s       cycle music style\n"
         "    q       quit\n"
@@ -199,6 +201,15 @@ int main(int argc, char *argv[])
         } else if (key == 's' || key == 'S') {
             current_style = style_next(current_style);
             synth_apply_style(&synth, current_style, &comp);
+        } else if (key == 'l' || key == 'L' || key == KEY_RIGHT) {
+            /* 5 seconds at current BPM — composition uses 16th-note ticks. */
+            int step = (int)(synth.bpm * 4.0f / 60.0f * 5.0f);
+            if (step < 1) step = 1;
+            synth_seek(&synth, step);
+        } else if (key == 'h' || key == 'H' || key == KEY_LEFT) {
+            int step = (int)(synth.bpm * 4.0f / 60.0f * 5.0f);
+            if (step < 1) step = 1;
+            synth_seek(&synth, -step);
         }
 
         /* update display */

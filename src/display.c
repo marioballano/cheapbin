@@ -100,7 +100,7 @@ static const char *CH_NAMES[] = {
 
 /* ── Disasm / quote state ──────────────────────────────────────────── */
 
-#define TICKER_LINES 8
+#define TICKER_LINES_MAX BV_MAX_LINES
 
 static int  s_quote_idx;
 static int  s_quote_timer;
@@ -166,8 +166,23 @@ void display_cleanup(void)
 int display_poll_key(void)
 {
     unsigned char c;
-    if (read(STDIN_FILENO, &c, 1) == 1) return c;
-    return 0;
+    if (read(STDIN_FILENO, &c, 1) != 1) return 0;
+    if (c != 0x1B) return c;
+
+    /* Possible CSI/SS3 escape sequence — bytes arrive back-to-back, so a
+     * non-blocking read here picks them up. A lone ESC press leaves the
+     * follow-ups empty and we return 0x1B unchanged. */
+    unsigned char b1, b2;
+    if (read(STDIN_FILENO, &b1, 1) != 1) return 0x1B;
+    if (b1 != '[' && b1 != 'O') return b1;
+    if (read(STDIN_FILENO, &b2, 1) != 1) return 0x1B;
+    switch (b2) {
+    case 'A': return KEY_UP;
+    case 'B': return KEY_DOWN;
+    case 'C': return KEY_RIGHT;
+    case 'D': return KEY_LEFT;
+    default:  return 0;
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -362,7 +377,7 @@ static void draw_meters(int row, int w, const SynthState *s)
 
 /* ── Oscilloscope ──────────────────────────────────────────────────── */
 
-static void draw_scope(int row, int w, const SynthState *s)
+static void draw_scope(int row, int w, int nrows, const SynthState *s)
 {
     /* Scope rows overlap with the right panel (disasm/regs at cols w-34..w-1
      * when drawn). Content starts at col 7 (after "%02X│" prefix); stop two
@@ -370,7 +385,8 @@ static void draw_scope(int row, int w, const SynthState *s)
     int right_limit = w >= 74 ? w - 36 : w - 2;
     int vw = right_limit - 6;
     if (vw < 20) vw = 20;
-    int vh = 7;
+    int vh = nrows;
+    if (vh < 2) vh = 2;
 
     MOVETO(row, 4);
     FG(80, 80, 100);
@@ -434,15 +450,17 @@ static void draw_scope(int row, int w, const SynthState *s)
 
 static void draw_hex_dump(int row, int w, int nrows, const SynthState *s)
 {
-    enum { MAX_BPR = 32, MAX_NROWS = 24 };
+    enum { MAX_BPR = 64, MAX_NROWS = 24 };
     if (nrows < 1) nrows = 1;
     if (nrows > MAX_NROWS) nrows = MAX_NROWS;
     /* Row width = "%08llX  " (10) + "%02X " × bpr (3*bpr) + "│" + bpr + "│"
-     *           = 12 + 4*bpr. Fit between col 4 and the right panel (col
-     *           w-34 when drawn, else the terminal edge), leaving a gutter. */
-    int avail = (w >= 74 ? w - 34 : w) - 4 - 2;
-    int bpr = 4;
-    while (bpr * 2 <= MAX_BPR && 12 + 4 * (bpr * 2) <= avail) bpr *= 2;
+     *           = 12 + 4*bpr. Span the whole width from col 4 up to the
+     * disasm/regs column (col w-34 when that panel is visible) — pick the
+     * largest integer bpr that fits so the block fills the row. */
+    int avail = (w >= 74 ? w - 34 : w) - 4 - 1;
+    int bpr = (avail - 12) / 4;
+    if (bpr < 4)        bpr = 4;
+    if (bpr > MAX_BPR)  bpr = MAX_BPR;
     const int total = nrows * bpr;
 
     MOVETO(row, 4);
@@ -465,7 +483,7 @@ static void draw_hex_dump(int row, int w, int nrows, const SynthState *s)
         size_t fsz = s_filesize > (size_t)total ? s_filesize - (size_t)total : 0;
         base = (uint64_t)(s->progress * (float)fsz);
     }
-    base &= ~(uint64_t)(bpr - 1);
+    base -= base % (uint64_t)bpr;   /* align to row boundary (bpr may be non-power-of-2) */
 
     uint8_t buf[MAX_NROWS * MAX_BPR];
     size_t  got = binview_read(s_bv, base, buf, (size_t)total);
@@ -514,11 +532,13 @@ static void draw_hex_dump(int row, int w, int nrows, const SynthState *s)
 
 /* ── Disassembly ticker (right panel) ──────────────────────────────── */
 
-static void draw_disasm(int row, int w, const SynthState *s)
+static void draw_disasm(int row, int w, int nrows, const SynthState *s)
 {
     int tw = 32;
     int cx = w - tw - 2;
     if (cx < 40) return;
+    if (nrows < 1) nrows = 1;
+    if (nrows > TICKER_LINES_MAX) nrows = TICKER_LINES_MAX;
 
     /* Step ESIL once every 4 frames for a calm scroll. Anchor PC to the
      * same address the hex dump is showing so emulation tracks playback
@@ -540,13 +560,13 @@ static void draw_disasm(int row, int w, const SynthState *s)
     for (int i = 0; i < tw - 13; i++) buf_printf("─");
     buf_printf("┐");
 
-    char     lines[TICKER_LINES][BV_LINE_LEN];
-    uint64_t addrs[TICKER_LINES];
+    char     lines[TICKER_LINES_MAX][BV_LINE_LEN];
+    uint64_t addrs[TICKER_LINES_MAX];
     uint64_t base = binview_pc(s_bv);
     if (base == 0) base = binview_text_addr(s_bv);
-    int n = binview_disasm(s_bv, base, TICKER_LINES, addrs, lines);
+    int n = binview_disasm(s_bv, base, nrows, addrs, lines);
 
-    for (int ln = 0; ln < TICKER_LINES; ln++) {
+    for (int ln = 0; ln < nrows; ln++) {
         MOVETO(row + 1 + ln, cx);
         FG(40, 40, 60);
         buf_printf("│");
@@ -573,7 +593,7 @@ static void draw_disasm(int row, int w, const SynthState *s)
         buf_printf("│");
     }
 
-    MOVETO(row + TICKER_LINES + 1, cx);
+    MOVETO(row + nrows + 1, cx);
     FG(40, 40, 60);
     buf_printf("└");
     for (int i = 0; i < tw - 4; i++) buf_printf("─");
@@ -824,22 +844,21 @@ void display_update(const SynthState *s)
     buf_printf(HOME CLEAR);
 
     /* ---- Layout (row numbers, all 1-based) ----
-       1-3     Header box
-       4       Beat indicator
-       5-6     File info / note / magic
-       7       (blank)
-       8-13    Channel meters (6 channels)
-       14      (blank)
-       15-22   Oscilloscope (1 label + 7 rows)
-       23      (blank)
-       24-28   Hex dump (1 label + 4 rows)
-       29      (blank)
-       30      Quote
-       31      (blank)
-       32      Progress bar
-       33      (blank)
-       34      Status line
-       Right panels (col w-34): disasm at row 8, regs at row 17
+       1-3                   Header box
+       4                     Beat indicator
+       5-6                   File info / note / magic
+       7                     (blank)
+       8-13                  Channel meters (6 channels)
+       14                    (blank)
+       15                    Oscilloscope label
+       16 .. 15+SN           Oscilloscope rows (SN, grows with height)
+       16+SN                 (blank)
+       17+SN                 Hex dump label
+       18+SN .. 17+SN+HN     Hex dump rows (HN, capped ~25% of screen)
+       quote_row             Quote
+       progress_row          Progress bar
+       status_row            Status line
+       Right panels (col w-34): disasm at row 8, regs at row 18
     */
 
     /* Background texture */
@@ -857,25 +876,56 @@ void display_update(const SynthState *s)
     /* Channel meters */
     draw_meters(8, w, s);
 
-    /* Oscilloscope */
-    draw_scope(15, w, s);
-
     /* Bottom widgets stick to the terminal's bottom edge when the window
-     * is taller than the original 33-row layout; the hex dump fills the
-     * gap between its label (row 23) and the quote line. */
+     * is taller than the original 33-row layout. */
     int quote_row    = h >= 33 ? h - 4 : 29;
     if (quote_row < 29) quote_row = 29;
     int progress_row = quote_row + 2;
     int status_row   = progress_row + 2;
-    int hex_rows     = quote_row - 25;
-    if (hex_rows < 4) hex_rows = 4;
+
+    /* Split the middle region between scope and hex dump. The hex dump
+     * is useful but secondary — cap it near ~25 % of the terminal so the
+     * scope can stretch on tall windows where the waveform looks better
+     * with more vertical resolution. */
+    int scope_label_row = 15;
+    int middle_rows     = quote_row - scope_label_row;   /* scope+blank+hex+blank */
+    if (middle_rows < 11) middle_rows = 11;               /* fallback: SN=7 + HN=4 */
+
+    int hex_cap = h / 4;                                  /* ~25 % of screen */
+    if (hex_cap < 4) hex_cap = 4;
+
+    int hex_rows   = hex_cap;
+    int scope_rows = middle_rows - 3 - hex_rows;          /* minus label+blank+label */
+    if (scope_rows < 7) {
+        scope_rows = 7;
+        hex_rows = middle_rows - 3 - scope_rows;
+        if (hex_rows < 4) hex_rows = 4;
+    }
+
+    int hex_label_row = scope_label_row + 1 + scope_rows + 1;
+
+    /* Oscilloscope */
+    draw_scope(scope_label_row, w, scope_rows, s);
 
     /* Hex dump */
-    draw_hex_dump(23, w, hex_rows, s);
+    draw_hex_dump(hex_label_row, w, hex_rows, s);
 
-    /* Right-side panels */
-    draw_disasm(8, w, s);
-    draw_regs(18, w);
+    /* Right-side panels — regs is a fixed-size grid and stays anchored at
+     * the bottom (its bottom border sits on the row just above the quote
+     * line). Disasm stretches upward to fill the remaining vertical space,
+     * so taller terminals show more instructions. */
+    int regs_panel_rows = REG_ROWS + 2;                    /* borders included */
+    int regs_row        = quote_row - 1 - regs_panel_rows; /* top border row */
+    if (regs_row < 18) regs_row = 18;                      /* original position */
+
+    /* Disasm starts at row 8 and ends directly above regs (no gap, matching
+     * the original tight stack). nrows = regs_row - 10. */
+    int disasm_nrows = regs_row - 10;
+    if (disasm_nrows < 8)                disasm_nrows = 8;
+    if (disasm_nrows > TICKER_LINES_MAX) disasm_nrows = TICKER_LINES_MAX;
+
+    draw_disasm(8, w, disasm_nrows, s);
+    draw_regs(regs_row, w);
 
     /* Quote */
     draw_quote(quote_row, w);

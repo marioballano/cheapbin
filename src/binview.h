@@ -18,7 +18,7 @@
 #define BV_MAX_REGS  16
 #define BV_REG_NAME  8
 #define BV_LINE_LEN  64
-#define BV_MAX_LINES 16
+#define BV_MAX_LINES 32
 
 typedef struct {
     char     name[BV_REG_NAME];

@@ -16,8 +16,14 @@ void display_update(const SynthState *s);
 /* Restore terminal to normal state. */
 void display_cleanup(void);
 
+/* Synthetic key codes for non-ASCII keys (outside 0..255). */
+#define KEY_UP    0x100
+#define KEY_DOWN  0x101
+#define KEY_LEFT  0x102
+#define KEY_RIGHT 0x103
+
 /* Check for keypress (non-blocking).
-   Returns: 'q' for quit, ' ' for pause toggle, 0 if no key. */
+   Returns: ASCII byte, one of the KEY_* codes, or 0 if no key. */
 int display_poll_key(void);
 
 #endif
