@@ -12,6 +12,8 @@ typedef enum {
 
 const char *theme_name(ThemeType t);
 ThemeType   theme_next(ThemeType current);
+/* Returns -1 on unknown name. Accepts: default, softice, td32 */
+int         theme_parse(const char *name);
 
 /* Each theme implements a single full-screen draw function. */
 void theme_default_draw(const SynthState *s);

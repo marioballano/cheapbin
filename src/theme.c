@@ -1,4 +1,5 @@
 #include "theme.h"
+#include <string.h>
 
 static const char *THEME_NAMES[] = {
     [THEME_DEFAULT] = "Default",
@@ -17,4 +18,13 @@ ThemeType theme_next(ThemeType current)
     int n = (int)current + 1;
     if (n >= NUM_THEMES) n = 0;
     return (ThemeType)n;
+}
+
+int theme_parse(const char *name)
+{
+    if (!name) return -1;
+    if (strcmp(name, "default") == 0) return THEME_DEFAULT;
+    if (strcmp(name, "softice") == 0) return THEME_SOFTICE;
+    if (strcmp(name, "td32")    == 0) return THEME_TD32;
+    return -1;
 }

@@ -29,4 +29,7 @@ int display_poll_key(void);
 /* Cycle to the next visual theme. */
 void display_cycle_theme(void);
 
+/* Set a specific theme directly. */
+void display_set_theme(int theme);
+
 #endif

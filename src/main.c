@@ -6,6 +6,7 @@
 #include "audio.h"
 #include "display.h"
 #include "binview.h"
+#include "theme.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +45,7 @@ static void print_usage(const char *prog)
         "                       synthwave, dungeon, baroque, acid,\n"
         "                       doom, eurobeat, demoscene, ska,\n"
         "                       trap, progrock, none\n"
+        "    --theme <name>   Force a UI theme: default, softice, td32\n"
         "    -r, --no-r2      Disable radare2 backend; use built-in fake\n"
         "                       disasm/hex/regs instead\n"
         "    -h, --help       Show this help\n"
@@ -66,6 +68,7 @@ int main(int argc, char *argv[])
     const char *filepath = NULL;
     int forced_chip  = -1;   /* -1 = auto-select from file content */
     int forced_style = -1;   /* -1 = no style transformation */
+    int forced_theme = -1;   /* -1 = use default theme */
     int use_r2       = 1;    /* 0 = force fallback disasm/hex/regs */
 
     /* ── Parse arguments ── */
@@ -94,6 +97,17 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "error: unknown style '%s'\n", argv[i]);
                 fprintf(stderr, "  valid: synthwave, dungeon, baroque, acid, doom,\n"
                                 "         eurobeat, demoscene, ska, trap, progrock, none\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--theme") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --theme requires an argument\n");
+                return 1;
+            }
+            forced_theme = theme_parse(argv[++i]);
+            if (forced_theme < 0) {
+                fprintf(stderr, "error: unknown theme '%s'\n", argv[i]);
+                fprintf(stderr, "  valid: default, softice, td32\n");
                 return 1;
             }
         } else if (strcmp(argv[i], "-r") == 0 ||
@@ -173,6 +187,8 @@ int main(int argc, char *argv[])
     const char *fname = basename(pathcopy);
     display_init(fname, size, bv);
     free(pathcopy);
+    if (forced_theme >= 0)
+        display_set_theme(forced_theme);
 
     /* ── Start playback ── */
     if (audio_start() != 0) {
