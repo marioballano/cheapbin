@@ -1,4 +1,6 @@
 #include "binview.h"
+#define USE_REGISTERS
+#define USE_FAKE_DISASM
 #include "re_data.h"
 
 #define R2P_ENABLE_DLOPEN 0

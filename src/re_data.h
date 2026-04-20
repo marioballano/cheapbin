@@ -10,6 +10,7 @@
 
 /* ── RE / Hacker / Chiptune Quotes ─────────────────────────────────── */
 
+#ifdef USE_RE_QUOTES
 static const char *RE_QUOTES[] = {
     /* Classic RE wisdom */
     "The code is the documentation.",
@@ -1065,9 +1066,11 @@ static const char *RE_QUOTES[] = {
 
 
 #define NUM_RE_QUOTES (sizeof(RE_QUOTES) / sizeof(RE_QUOTES[0]))
+#endif /* USE_RE_QUOTES */
 
 /* ── x86/ARM Opcodes for display ───────────────────────────────────── */
 
+#ifdef USE_OPCODES
 static const char *OPCODES[] = {
     "NOP", "MOV", "PUSH", "POP", "CALL", "RET", "JMP", "JNZ", "JZ", "JE",
     "JNE", "JG", "JL", "JGE", "JLE", "JA", "JB", "JAE", "JBE", "CMP",
@@ -1097,9 +1100,11 @@ static const char *OPCODES[] = {
 };
 
 #define NUM_OPCODES (sizeof(OPCODES) / sizeof(OPCODES[0]))
+#endif /* USE_OPCODES */
 
 /* ── Register names ────────────────────────────────────────────────── */
 
+#ifdef USE_REGISTERS
 static const char *REGISTERS[] = {
     /* x86-64 */
     "RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP", "RSP",
@@ -1117,9 +1122,11 @@ static const char *REGISTERS[] = {
 };
 
 #define NUM_REGISTERS (sizeof(REGISTERS) / sizeof(REGISTERS[0]))
+#endif /* USE_REGISTERS */
 
 /* ── Section names ─────────────────────────────────────────────────── */
 
+#ifdef USE_SECTION_NAMES
 static const char *SECTION_NAMES[] = {
     ".text", ".data", ".bss", ".rodata", ".plt", ".got",
     ".got.plt", ".init", ".fini", ".ctors", ".dtors",
@@ -1131,9 +1138,11 @@ static const char *SECTION_NAMES[] = {
 };
 
 #define NUM_SECTION_NAMES (sizeof(SECTION_NAMES) / sizeof(SECTION_NAMES[0]))
+#endif /* USE_SECTION_NAMES */
 
 /* ── Fake disassembly snippets ─────────────────────────────────────── */
 
+#ifdef USE_FAKE_DISASM
 static const char *FAKE_DISASM[] = {
     "push   rbp",
     "mov    rbp, rsp",
@@ -1187,5 +1196,6 @@ static const char *FAKE_DISASM[] = {
 };
 
 #define NUM_FAKE_DISASM (sizeof(FAKE_DISASM) / sizeof(FAKE_DISASM[0]))
+#endif /* USE_FAKE_DISASM */
 
 #endif /* CHEAPBIN_RE_DATA_H */

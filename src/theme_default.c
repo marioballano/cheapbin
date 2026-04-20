@@ -1,6 +1,9 @@
 #include "display_internal.h"
 #include "theme.h"
 #include "chipemu.h"
+#define USE_RE_QUOTES
+#define USE_OPCODES
+#define USE_SECTION_NAMES
 #include "re_data.h"
 #include "binview.h"
 #include <ctype.h>

@@ -28,6 +28,7 @@
 #include "theme.h"
 #include "chipemu.h"
 #include "style.h"
+#define USE_RE_QUOTES
 #include "re_data.h"
 #include "binview.h"
 #include <ctype.h>
