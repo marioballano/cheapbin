@@ -163,8 +163,8 @@ BinView *binview_open(const char *path, const uint8_t *data, size_t size,
      * -2: silence stderr noise from r2
      * Let r2 auto-detect arch/bits/slice from the binary itself. */
     bv->r2 = r2p_open(R2P_SPAWN, path,
-        "-0 -z -2 -e scr.color=0 -e scr.utf8=0 -e scr.interactive=false"
-        " -e asm.addr=0 -e asm.bytes=0");
+        "-q0 -z -2 -e scr.color=0 -e scr.utf8=0 -e scr.interactive=false"
+        " -e asm.addr=0 -e asm.bytes=0 -e asm.ucase=true");
 
     if (!bv->r2) {
         return bv;  /* fallback mode */
@@ -358,6 +358,8 @@ int binview_disasm(BinView *bv, uint64_t addr, int count,
             if (*s) {
                 strncpy(lines[n], s, BV_LINE_LEN - 1);
                 lines[n][BV_LINE_LEN - 1] = '\0';
+                for (char *c = lines[n]; *c; c++)
+                    *c = (char)toupper((unsigned char)*c);
                 if (addrs_out) addrs_out[n] = cur;
                 /* approximate: addresses just monotonically count up by 4
                  * — visual ticker only, real PC is shown separately */
