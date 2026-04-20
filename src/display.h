@@ -26,4 +26,7 @@ void display_cleanup(void);
    Returns: ASCII byte, one of the KEY_* codes, or 0 if no key. */
 int display_poll_key(void);
 
+/* Cycle to the next visual theme. */
+void display_cycle_theme(void);
+
 #endif

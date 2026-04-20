@@ -28,6 +28,10 @@ add_executable(cheapbin
     src/binview.c
     ${PLATFORM_AUDIO_SRC}
     src/display.c
+    src/theme.c
+    src/theme_default.c
+    src/theme_softice.c
+    src/theme_td32.c
 )
 
 target_compile_options(cheapbin PRIVATE

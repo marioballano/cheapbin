@@ -72,7 +72,21 @@ Needs macOS or Linux, CMake, and a C11 compiler. That's it. No dependencies.
 ./build/cheapbin ~/Downloads/suspicious.pdf
 ```
 
-`space` to pause. `h`/`←` seek back 5 s. `l`/`→` seek forward 5 s. `c` to cycle sound chips. `s` to cycle music styles. `q` to quit.
+`space` to pause. `h`/`←` seek back 5 s. `l`/`→` seek forward 5 s. `c` to cycle sound chips. `s` to cycle music styles. `t` to cycle themes. `q` to quit.
+
+---
+
+## Themes
+
+Three built-in UI themes, cycled with `t`:
+
+| Theme | Look |
+|-------|------|
+| **Default** | The original cheapbin hacker terminal — green-on-black with hex, meters, and RE quotes |
+| **SoftICE** | NuMega SoftICE kernel debugger — black background, cyan register values, green section headers, PROT32 status bar, CPU flags, segment:offset addresses, CONSOLE event log |
+| **TD32** | Borland Turbo Debugger 32 — teal BIOS VGA background, double-line bordered panels, dark blue selection bar, red menu hotkeys, READY indicator, function key bar |
+
+All themes are **architecture-aware** when radare2 is active — register names, CPU panel title, and stack pointer adapt automatically to x86-32, x86-64, ARM32, or AArch64. Each theme includes its own oscilloscope waveform style with half-block sub-character rendering.
 
 ---
 
