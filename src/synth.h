@@ -96,12 +96,21 @@ typedef struct {
 
     StyleType    style_type;
     MusicEvent  *styled_events;    /* malloc'd transformed copy, or NULL */
+
+    ScaleType    scale_type;       /* current scale (mirrors comp->scale_index) */
 } SynthState;
 
 void synth_init(SynthState *s, Composition *comp);
 void synth_set_chip(SynthState *s, ChipType chip);
 void synth_apply_style(SynthState *s, StyleType style,
                        const Composition *original);
+
+/* Rebuild the composition in-place with a different scale (-1 = auto from
+   file fingerprint). Preserves current playback tick and re-applies the
+   currently active style on top of the new raw events. Overwrites
+   *comp with the new events/sections and frees the old arrays. */
+void synth_set_scale(SynthState *s, const uint8_t *data, size_t size,
+                     int scale_override, Composition *comp);
 void synth_render(SynthState *s, int16_t *buffer, int num_samples);
 
 /* Seek playback by tick_delta (positive = forward, negative = backward).

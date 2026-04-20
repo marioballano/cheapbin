@@ -1,4 +1,5 @@
 #include "analyzer.h"
+#include "composer.h"
 #include <math.h>
 #include <string.h>
 
@@ -104,7 +105,7 @@ void analyze_global(const uint8_t *data, size_t size, GlobalAnalysis *out)
     uint8_t bq3 = safe_byte(data, size, 3 * size / 4);
 
     /* Musical parameters derived from accumulated fingerprint */
-    out->scale_index        = acc[0] % 10;
+    out->scale_index        = acc[0] % NUM_SCALES;
     out->progression_index  = acc[1] % 8;
     out->root_note          = acc[2] % 12;
     out->base_tempo         = 100.0f + (float)acc[3] * (80.0f / 255.0f);

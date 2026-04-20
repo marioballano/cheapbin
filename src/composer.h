@@ -33,6 +33,22 @@ enum {
     SEC_OUTRO   = 4,
 };
 
+/* Musical scales — index into SCALES[] in composer.c */
+typedef enum {
+    SCALE_MAJOR            = 0,
+    SCALE_NATURAL_MINOR    = 1,
+    SCALE_DORIAN           = 2,
+    SCALE_MIXOLYDIAN       = 3,
+    SCALE_HARMONIC_MINOR   = 4,
+    SCALE_MAJOR_PENTATONIC = 5,
+    SCALE_MINOR_PENTATONIC = 6,
+    SCALE_JAPANESE_IN_SEN  = 7,
+    SCALE_HUNGARIAN_MINOR  = 8,
+    SCALE_DOUBLE_HARMONIC  = 9,
+    SCALE_WHOLE_TONE       = 10,
+    NUM_SCALES,
+} ScaleType;
+
 /* Drum types encoded in midi_note for drum channel */
 enum {
     DRUM_KICK   = 36,
@@ -74,9 +90,19 @@ typedef struct {
     float        global_bpm;
     float        swing;          /* 0.0-0.35 */
     int          total_ticks;
+    int          scale_index;    /* ScaleType used when these events were generated */
 } Composition;
 
 int  compose(const uint8_t *data, size_t size, Composition *out);
+int  compose_with_scale(const uint8_t *data, size_t size,
+                        int scale_override, Composition *out);
 void composition_free(Composition *comp);
+
+/* Scale metadata. Pass the binary-derived index to scale_name() /
+   scale_short_name() to show the scale currently in use. */
+const char *scale_name(ScaleType type);
+const char *scale_short_name(ScaleType type);
+ScaleType   scale_next(ScaleType current);
+int         scale_parse(const char *name);  /* -1 on unknown */
 
 #endif

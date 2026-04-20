@@ -45,6 +45,12 @@ static void print_usage(const char *prog)
         "                       synthwave, dungeon, baroque, acid,\n"
         "                       doom, eurobeat, demoscene, ska,\n"
         "                       trap, progrock, none\n"
+        "    --scale <name>   Force a musical scale:\n"
+        "                       major, minor, dorian, mixolydian,\n"
+        "                       harmonic-minor, major-pentatonic,\n"
+        "                       minor-pentatonic, in-sen,\n"
+        "                       hungarian-minor, double-harmonic,\n"
+        "                       whole-tone (a.k.a. tonos-enteros)\n"
         "    --theme <name>   Force a UI theme: default, softice, td32\n"
         "    -r, --no-r2      Disable radare2 backend; use built-in fake\n"
         "                       disasm/hex/regs instead\n"
@@ -56,6 +62,7 @@ static void print_usage(const char *prog)
         "    l / →   seek forward 5s\n"
         "    c       cycle sound chip\n"
         "    s       cycle music style\n"
+        "    k       cycle musical scale\n"
         "    t       cycle visual theme\n"
         "    q       quit\n"
         "\n", prog);
@@ -68,6 +75,7 @@ int main(int argc, char *argv[])
     const char *filepath = NULL;
     int forced_chip  = -1;   /* -1 = auto-select from file content */
     int forced_style = -1;   /* -1 = no style transformation */
+    int forced_scale = -1;   /* -1 = use binary-derived scale */
     int forced_theme = -1;   /* -1 = use default theme */
     int use_r2       = 1;    /* 0 = force fallback disasm/hex/regs */
 
@@ -97,6 +105,21 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "error: unknown style '%s'\n", argv[i]);
                 fprintf(stderr, "  valid: synthwave, dungeon, baroque, acid, doom,\n"
                                 "         eurobeat, demoscene, ska, trap, progrock, none\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--scale") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --scale requires an argument\n");
+                return 1;
+            }
+            forced_scale = scale_parse(argv[++i]);
+            if (forced_scale < 0) {
+                fprintf(stderr, "error: unknown scale '%s'\n", argv[i]);
+                fprintf(stderr, "  valid: major, minor, dorian, mixolydian,\n"
+                                "         harmonic-minor, major-pentatonic,\n"
+                                "         minor-pentatonic, in-sen,\n"
+                                "         hungarian-minor, double-harmonic,\n"
+                                "         whole-tone\n");
                 return 1;
             }
         } else if (strcmp(argv[i], "--theme") == 0) {
@@ -135,7 +158,7 @@ int main(int argc, char *argv[])
 
     /* ── Compose ── */
     Composition comp;
-    if (compose(data, size, &comp) != 0) {
+    if (compose_with_scale(data, size, forced_scale, &comp) != 0) {
         fprintf(stderr, "error: composition failed\n");
         free(data);
         return 1;
@@ -218,6 +241,9 @@ int main(int argc, char *argv[])
         } else if (key == 's' || key == 'S') {
             current_style = style_next(current_style);
             synth_apply_style(&synth, current_style, &comp);
+        } else if (key == 'k' || key == 'K') {
+            ScaleType next = scale_next(synth.scale_type);
+            synth_set_scale(&synth, data, size, (int)next, &comp);
         } else if (key == 't' || key == 'T') {
             display_cycle_theme();
         } else if (key == 'l' || key == 'L' || key == KEY_RIGHT) {

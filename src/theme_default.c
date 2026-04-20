@@ -67,11 +67,19 @@ static void draw_header(int w, const SynthState *s)
         style_len = 4 + display_width(sn);
     }
 
+    const char *kn = scale_short_name(s->scale_type);
+    buf_printf("  ");
+    FG(100, 220, 150);
+    buf_printf(BOLD "♪" RESET " ");
+    FG(180, 240, 200);
+    buf_printf("%s" RESET, kn);
+    int scale_len = 4 + display_width(kn);
+
     char info[64];
     int n = snprintf(info, sizeof(info), " [%s] %.0f BPM ",
                      s->section_name, (double)s->bpm);
     int chip_len = 3 + display_width(chip_short_name(s->chip_type));
-    int pad = bw - 13 - n - chip_len - style_len;
+    int pad = bw - 13 - n - chip_len - style_len - scale_len;
     for (int i = 0; i < pad; i++) buf_printf(" ");
     FG(255, 200, 0);
     buf_printf(BOLD "%s" RESET, info);
@@ -585,6 +593,8 @@ static void draw_status(int row, const SynthState *s)
     buf_printf("c" RESET " chip  ");
     FG(80, 80, 100);
     buf_printf("s" RESET " style  ");
+    FG(80, 80, 100);
+    buf_printf("k" RESET " scale  ");
     FG(80, 80, 100);
     buf_printf("t" RESET " theme  ");
     FG(80, 80, 100);

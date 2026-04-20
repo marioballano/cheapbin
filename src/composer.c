@@ -6,7 +6,7 @@
 
 /* ── Scales (semitone offsets from root) ─────────────────────────────── */
 
-static const int SCALES[10][7] = {
+static const int SCALES[NUM_SCALES][7] = {
     {0, 2, 4, 5, 7, 9, 11},   /* major */
     {0, 2, 3, 5, 7, 8, 10},   /* natural minor */
     {0, 2, 3, 5, 7, 9, 10},   /* dorian */
@@ -17,6 +17,7 @@ static const int SCALES[10][7] = {
     {0, 1, 5, 7, 8, 12, 13},  /* japanese in-sen + ext */
     {0, 2, 3, 6, 7, 8, 11},   /* hungarian minor */
     {0, 1, 4, 5, 7, 8, 11},   /* double harmonic */
+    {0, 2, 4, 6, 8, 10, 12},  /* whole tone (tonos enteros) — degree 6 is octave */
 };
 
 /* ── Chord progressions (scale degree indices 0-6) ──────────────────── */
@@ -384,6 +385,12 @@ static void gen_drums(Composition *c, const GlobalAnalysis *ga, const SongSectio
 
 int compose(const uint8_t *data, size_t size, Composition *out)
 {
+    return compose_with_scale(data, size, -1, out);
+}
+
+int compose_with_scale(const uint8_t *data, size_t size,
+                       int scale_override, Composition *out)
+{
     memset(out, 0, sizeof(*out));
     if (size == 0) return -1;
 
@@ -391,12 +398,16 @@ int compose(const uint8_t *data, size_t size, Composition *out)
     GlobalAnalysis ga;
     analyze_global(data, size, &ga);
 
+    if (scale_override >= 0 && scale_override < NUM_SCALES)
+        ga.scale_index = scale_override;
+
     const int *scale = SCALES[ga.scale_index];
     const int *prog  = PROGRESSIONS[ga.progression_index];
     int root = ga.root_note;
 
-    out->global_bpm = ga.base_tempo;
-    out->swing      = ga.swing;
+    out->global_bpm  = ga.base_tempo;
+    out->swing       = ga.swing;
+    out->scale_index = ga.scale_index;
 
     /* Build song sections */
     out->num_sections = NUM_FORM_SECTIONS;
@@ -439,4 +450,77 @@ void composition_free(Composition *comp)
     free(comp->events);
     free(comp->sections);
     memset(comp, 0, sizeof(*comp));
+}
+
+/* ── Scale metadata ─────────────────────────────────────────────────── */
+
+const char *scale_name(ScaleType type)
+{
+    switch (type) {
+    case SCALE_MAJOR:            return "Major";
+    case SCALE_NATURAL_MINOR:    return "Natural Minor";
+    case SCALE_DORIAN:           return "Dorian";
+    case SCALE_MIXOLYDIAN:       return "Mixolydian";
+    case SCALE_HARMONIC_MINOR:   return "Harmonic Minor";
+    case SCALE_MAJOR_PENTATONIC: return "Major Pentatonic";
+    case SCALE_MINOR_PENTATONIC: return "Minor Pentatonic";
+    case SCALE_JAPANESE_IN_SEN:  return "Japanese In-Sen";
+    case SCALE_HUNGARIAN_MINOR:  return "Hungarian Minor";
+    case SCALE_DOUBLE_HARMONIC:  return "Double Harmonic";
+    case SCALE_WHOLE_TONE:       return "WHOLE_TONE";
+    default:                     return "?";
+    }
+}
+
+const char *scale_short_name(ScaleType type)
+{
+    switch (type) {
+    case SCALE_MAJOR:            return "Major";
+    case SCALE_NATURAL_MINOR:    return "Minor";
+    case SCALE_DORIAN:           return "Dorian";
+    case SCALE_MIXOLYDIAN:       return "Mixo";
+    case SCALE_HARMONIC_MINOR:   return "HarmMin";
+    case SCALE_MAJOR_PENTATONIC: return "MajPent";
+    case SCALE_MINOR_PENTATONIC: return "MinPent";
+    case SCALE_JAPANESE_IN_SEN:  return "In-Sen";
+    case SCALE_HUNGARIAN_MINOR:  return "HunMin";
+    case SCALE_DOUBLE_HARMONIC:  return "DblHarm";
+    case SCALE_WHOLE_TONE:       return "WHOLE_TONE";
+    default:                     return "?";
+    }
+}
+
+ScaleType scale_next(ScaleType current)
+{
+    int next = (int)current + 1;
+    if (next >= NUM_SCALES) next = 0;
+    return (ScaleType)next;
+}
+
+int scale_parse(const char *name)
+{
+    if (!name) return -1;
+    if (strcasecmp(name, "major") == 0)                   return SCALE_MAJOR;
+    if (strcasecmp(name, "minor") == 0 ||
+        strcasecmp(name, "natural-minor") == 0)           return SCALE_NATURAL_MINOR;
+    if (strcasecmp(name, "dorian") == 0)                  return SCALE_DORIAN;
+    if (strcasecmp(name, "mixolydian") == 0 ||
+        strcasecmp(name, "mixo") == 0)                    return SCALE_MIXOLYDIAN;
+    if (strcasecmp(name, "harmonic-minor") == 0 ||
+        strcasecmp(name, "harmonic") == 0)                return SCALE_HARMONIC_MINOR;
+    if (strcasecmp(name, "major-pentatonic") == 0 ||
+        strcasecmp(name, "majpent") == 0)                 return SCALE_MAJOR_PENTATONIC;
+    if (strcasecmp(name, "minor-pentatonic") == 0 ||
+        strcasecmp(name, "pentatonic") == 0 ||
+        strcasecmp(name, "minpent") == 0)                 return SCALE_MINOR_PENTATONIC;
+    if (strcasecmp(name, "in-sen") == 0 ||
+        strcasecmp(name, "japanese") == 0)                return SCALE_JAPANESE_IN_SEN;
+    if (strcasecmp(name, "hungarian-minor") == 0 ||
+        strcasecmp(name, "hungarian") == 0)               return SCALE_HUNGARIAN_MINOR;
+    if (strcasecmp(name, "double-harmonic") == 0)         return SCALE_DOUBLE_HARMONIC;
+    if (strcasecmp(name, "whole-tone") == 0 ||
+        strcasecmp(name, "wholetone") == 0 ||
+        strcasecmp(name, "tonos-enteros") == 0 ||
+        strcasecmp(name, "whole_tone") == 0)              return SCALE_WHOLE_TONE;
+    return -1;
 }

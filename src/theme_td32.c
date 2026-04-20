@@ -719,6 +719,12 @@ static void td_draw_status(int row, int w, const SynthState *s)
         buf_printf("%s", style_short_name(s->style_type));
     }
 
+    /* Scale */
+    TD_FG_DIM();
+    buf_printf("·");
+    TD_FG_TEXT();
+    buf_printf("%s", scale_short_name(s->scale_type));
+
     /* File */
     TD_FG_DIM();
     buf_printf(" │ ");

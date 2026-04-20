@@ -585,6 +585,9 @@ static void si_draw_console(int row, int w, int nrows, const SynthState *s)
                  "STYLE=%s applied", style_short_name(s->style_type));
 
     snprintf(event_lines[num_events++], 128,
+             "SCALE=%s applied", scale_short_name(s->scale_type));
+
+    snprintf(event_lines[num_events++], 128,
              "AUDIO=44100Hz 16bit mono  BPM=%.0f", (double)s->bpm);
 
     snprintf(event_lines[num_events++], 128,
@@ -683,6 +686,10 @@ static void si_draw_console(int row, int w, int nrows, const SynthState *s)
     buf_printf("s");
     SI_FG_DIM();
     buf_printf("=style ");
+    SI_FG_CYAN();
+    buf_printf("k");
+    SI_FG_DIM();
+    buf_printf("=scale ");
     SI_FG_CYAN();
     buf_printf("t");
     SI_FG_DIM();

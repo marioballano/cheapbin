@@ -541,6 +541,7 @@ void synth_init(SynthState *s, Composition *comp)
     s->swing        = comp->swing;
     s->finished     = false;
     s->paused       = false;
+    s->scale_type   = (ScaleType)comp->scale_index;
 
     s->sections        = comp->sections;
     s->num_sections    = comp->num_sections;
@@ -727,6 +728,49 @@ void synth_apply_style(SynthState *s, StyleType style,
 
     /* now safe to free old styled events */
     free(old_styled);
+}
+
+/* ── Scale change (rebuilds composition, keeps current tick) ───────── */
+
+void synth_set_scale(SynthState *s, const uint8_t *data, size_t size,
+                     int scale_override, Composition *comp)
+{
+    Composition new_comp;
+    if (compose_with_scale(data, size, scale_override, &new_comp) != 0)
+        return;
+    if (new_comp.num_events == 0) {
+        composition_free(&new_comp);
+        return;
+    }
+
+    MusicEvent  *old_events   = comp->events;
+    SongSection *old_sections = comp->sections;
+
+    /* Publish the new composition before anything references the old
+     * arrays. The audio callback re-reads s->events / s->sections each
+     * sample, so we update those fields below via synth_apply_style(). */
+    comp->events       = new_comp.events;
+    comp->num_events   = new_comp.num_events;
+    comp->capacity     = new_comp.capacity;
+    comp->sections     = new_comp.sections;
+    comp->num_sections = new_comp.num_sections;
+    comp->global_bpm   = new_comp.global_bpm;
+    comp->swing        = new_comp.swing;
+    comp->total_ticks  = new_comp.total_ticks;
+    comp->scale_index  = new_comp.scale_index;
+
+    s->sections     = comp->sections;
+    s->num_sections = comp->num_sections;
+    s->scale_type   = (ScaleType)comp->scale_index;
+
+    /* Re-apply the current style (or STYLE_NONE) against the new raw
+     * events. This does the real event-pointer swap, updates bpm/timing,
+     * re-seeks event_idx to current_tick, and releases active envelopes. */
+    synth_apply_style(s, s->style_type, comp);
+
+    /* Safe to free the old arrays now — no live pointer reaches them. */
+    free(old_events);
+    free(old_sections);
 }
 
 /* ── Seek ───────────────────────────────────────────────────────────── */
