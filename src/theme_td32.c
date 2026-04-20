@@ -315,8 +315,9 @@ static void td_draw_regs(int row, int col, int pw, int nrows,
             buf_printf(" ");
             if (note > 0 && note < 128) {
                 TD_FG_GREEN();
-                buf_printf(BOLD "♪" RESET " ");
+                buf_printf(BOLD "♪" RESET);
                 TD_BG();
+                buf_printf(" ");
                 TD_FG_TEXT();
                 buf_printf("%-3s%d", NOTE_NAMES[note % 12], note / 12 - 1);
             } else {
