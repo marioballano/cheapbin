@@ -703,6 +703,13 @@ StyleType style_next(StyleType current)
     return (StyleType)next;
 }
 
+StyleType style_prev(StyleType current)
+{
+    int prev = (int)current - 1;
+    if (prev < 0) prev = NUM_STYLE_TYPES - 1;
+    return (StyleType)prev;
+}
+
 int style_parse(const char *name)
 {
     if (!name) return -1;

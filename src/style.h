@@ -31,6 +31,9 @@ const char *style_short_name(StyleType type);
 /* Cycle to the next style type (wraps around). */
 StyleType style_next(StyleType current);
 
+/* Cycle to the previous style type (wraps around). */
+StyleType style_prev(StyleType current);
+
 /* Parse a style name from a CLI string.  Returns -1 on failure. */
 int style_parse(const char *name);
 

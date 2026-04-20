@@ -91,6 +91,13 @@ ChipType chip_next(ChipType current)
     return (ChipType)next;
 }
 
+ChipType chip_prev(ChipType current)
+{
+    int prev = (int)current - 1;
+    if (prev < 0) prev = NUM_CHIP_TYPES - 1;
+    return (ChipType)prev;
+}
+
 /* ── CLI parsing ───────────────────────────────────────────────────── */
 
 int chip_parse(const char *name)

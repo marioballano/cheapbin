@@ -20,6 +20,13 @@ ThemeType theme_next(ThemeType current)
     return (ThemeType)n;
 }
 
+ThemeType theme_prev(ThemeType current)
+{
+    int n = (int)current - 1;
+    if (n < 0) n = NUM_THEMES - 1;
+    return (ThemeType)n;
+}
+
 int theme_parse(const char *name)
 {
     if (!name) return -1;

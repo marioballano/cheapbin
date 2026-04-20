@@ -12,6 +12,7 @@ typedef enum {
 
 const char *theme_name(ThemeType t);
 ThemeType   theme_next(ThemeType current);
+ThemeType   theme_prev(ThemeType current);
 /* Returns -1 on unknown name. Accepts: default, softice, td32 */
 int         theme_parse(const char *name);
 
