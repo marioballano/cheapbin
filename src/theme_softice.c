@@ -264,14 +264,19 @@ static void si_draw_code(int row, int w, int nrows, const SynthState *s)
         }
         buf_printf(" %04X:%08X  ", 0x0008, (unsigned)(addr & 0xFFFFFFFF));
 
-        /* Instruction text */
+        /* Instruction text — keep more lines readable, fade gradually */
         if (ln == 0) {
             SI_FG_WHITE();
             buf_printf(BOLD);
-        } else if (ln < 4) {
+        } else if (ln < 3) {
             SI_FG_WHITE();
-        } else {
+        } else if (ln < 6) {
             SI_FG_GREY();
+        } else {
+            /* Gradual fade: nearby lines lighter, distant ones dimmer */
+            int g = 170 - (ln - 6) * 12;
+            if (g < 90) g = 90;
+            FG(g, g, g);
         }
 
         int avail = w - 19;
@@ -337,15 +342,28 @@ static void si_draw_data(int row, int w, int nrows, const SynthState *s)
         buf_printf(" 0030:%08X  ",
                    (unsigned)((base + (uint64_t)(r * bpr)) & 0xFFFFFFFF));
 
-        /* Hex bytes */
+        /* Hex bytes — richer coloring by byte class */
         for (int b = 0; b < bpr; b++) {
             size_t idx = (size_t)(r * bpr + b);
             if (idx < got) {
                 uint8_t v = hbuf[idx];
-                if (v == 0)                       SI_FG_DIM();
-                else if (v == 0xFF)               SI_FG_RED();
-                else if (v >= 0x20 && v < 0x7F)   SI_FG_WHITE();
-                else                               SI_FG_GREY();
+                if (v == 0x00) {
+                    SI_FG_DIM();
+                } else if (v == 0xFF) {
+                    SI_FG_RED();
+                } else if (v == 0xCC || v == 0xCD || v == 0x90) {
+                    /* INT3, INT, NOP — highlight as yellow */
+                    SI_FG_YELLOW();
+                } else if (v >= 0x20 && v < 0x7F) {
+                    /* Printable ASCII — bright white */
+                    SI_FG_WHITE();
+                } else if (v < 0x20) {
+                    /* Low control bytes — cyan tint */
+                    FG(0, 180, 200);
+                } else {
+                    /* High bytes — light grey-blue tint */
+                    FG(160, 170, 190);
+                }
                 buf_printf("%02X ", v);
             } else {
                 SI_FG_DIM();
@@ -359,15 +377,15 @@ static void si_draw_data(int row, int w, int nrows, const SynthState *s)
             }
         }
 
-        /* ASCII column */
-        SI_FG_DIM();
+        /* ASCII column — printable chars in cyan for contrast */
+        SI_FG_DKGREY();
         buf_printf(" ");
         for (int b = 0; b < bpr; b++) {
             size_t idx = (size_t)(r * bpr + b);
             if (idx < got) {
                 uint8_t v = hbuf[idx];
                 if (v >= 0x20 && v < 0x7F) {
-                    SI_FG_GREY();
+                    SI_FG_CYAN();
                     buf_printf("%c", (char)v);
                 } else {
                     SI_FG_DIM();
@@ -607,8 +625,35 @@ static void si_draw_console(int row, int w, int nrows, const SynthState *s)
 
         int eidx = scroll + r;
         if (eidx < num_events) {
-            SI_FG_DIM();
-            buf_printf("%s", event_lines[eidx]);
+            /* Color-code labels vs values for visual interest */
+            const char *line = event_lines[eidx];
+            const char *eq = strchr(line, '=');
+            if (eq && eq > line && eq < line + 12) {
+                /* label= portion in cyan */
+                SI_FG_CYAN();
+                buf_printf("%.*s", (int)(eq - line + 1), line);
+                const char *val = eq + 1;
+                /* Choose value color based on label type */
+                if (line[0] == 'M' && line[1] == 'S' && line[2] == 'G') {
+                    SI_FG_YELLOW();
+                } else if (line[0] == 'S' && line[1] == 'T' && line[2] == 'A') {
+                    /* STATUS line — color by state */
+                    if (strstr(val, "BREAK"))
+                        SI_FG_YELLOW();
+                    else if (strstr(val, "COMPLETE"))
+                        SI_FG_GREEN();
+                    else
+                        SI_FG_WHITE();
+                } else {
+                    SI_FG_WHITE();
+                }
+                SI_BG();
+                buf_printf("%s", val);
+            } else {
+                /* Indented continuation lines ("  size=...") */
+                SI_FG_GREY();
+                buf_printf("%s", line);
+            }
         }
 
         MOVETO(row + r, w);
@@ -625,28 +670,28 @@ static void si_draw_console(int row, int w, int nrows, const SynthState *s)
     buf_printf(BOLD ":" RESET);
     SI_BG();
 
-    /* Show a "command" — key hints */
-    SI_FG_GREY();
+    /* Show a "command" — key hints with brighter keys */
+    SI_FG_CYAN();
     buf_printf(" space");
     SI_FG_DIM();
     buf_printf("=pause ");
-    SI_FG_GREY();
+    SI_FG_CYAN();
     buf_printf("c");
     SI_FG_DIM();
     buf_printf("=chip ");
-    SI_FG_GREY();
+    SI_FG_CYAN();
     buf_printf("s");
     SI_FG_DIM();
     buf_printf("=style ");
-    SI_FG_GREY();
+    SI_FG_CYAN();
     buf_printf("t");
     SI_FG_DIM();
     buf_printf("=ui ");
-    SI_FG_GREY();
+    SI_FG_CYAN();
     buf_printf("h/l");
     SI_FG_DIM();
     buf_printf("=seek ");
-    SI_FG_GREY();
+    SI_FG_CYAN();
     buf_printf("q");
     SI_FG_DIM();
     buf_printf("=quit");
@@ -667,33 +712,38 @@ static void si_draw_status_bar(int row, int w, const SynthState *s)
     SI_FG_DKGREY();
     buf_printf("│");
 
+    /* PROT32 badge — bright green on dark-blue chip for emphasis */
+    BG(0, 0, 100);
     SI_FG_GREEN();
-    buf_printf(BOLD " PROT32" RESET);
+    buf_printf(BOLD " PROT32 " RESET);
     SI_BG();
 
-    /* Chip / driver name */
-    SI_FG_GREEN();
-    buf_printf("  %s", chip_short_name(s->chip_type));
+    /* Chip / driver name — cyan to stand out from green labels */
+    SI_FG_CYAN();
+    buf_printf(BOLD "  %s" RESET, chip_short_name(s->chip_type));
+    SI_BG();
 
     /* File / "module" */
-    SI_FG_DIM();
+    SI_FG_DKGREY();
     buf_printf("  │  ");
-    SI_FG_GREEN();
-    buf_printf("%s", di_filename());
+    SI_FG_WHITE();
+    buf_printf(BOLD "%s" RESET, di_filename());
+    SI_BG();
 
     /* Status */
-    SI_FG_DIM();
+    SI_FG_DKGREY();
     buf_printf("  │  ");
     if (s->paused) {
         SI_FG_YELLOW();
-        buf_printf("(BREAK)");
+        buf_printf(BOLD "(BREAK)" RESET);
     } else if (s->finished) {
         SI_FG_GREEN();
-        buf_printf("(COMPLETE)");
+        buf_printf(BOLD "(COMPLETE)" RESET);
     } else {
         SI_FG_GREEN();
-        buf_printf("(DISPATCH)");
+        buf_printf("(RUNNING)");
     }
+    SI_BG();
 
     /* Progress bar on the right */
     int pct = (int)(s->progress * 100.0f);
