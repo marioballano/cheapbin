@@ -67,6 +67,9 @@ void chip_init(ChipState *cs, ChipType type);
 /* Cycle to the next chip type (wraps around). */
 ChipType chip_next(ChipType current);
 
+/* Cycle to the previous chip type (wraps around). */
+ChipType chip_prev(ChipType current);
+
 /* Parse a chip name from a CLI string.  Returns -1 on failure. */
 int chip_parse(const char *name);
 
