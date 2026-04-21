@@ -167,6 +167,11 @@ void display_cycle_theme(void)
     s_theme = theme_next(s_theme);
 }
 
+void display_cycle_theme_prev(void)
+{
+    s_theme = theme_prev(s_theme);
+}
+
 void display_set_theme(int theme)
 {
     if (theme >= 0 && theme < NUM_THEMES)

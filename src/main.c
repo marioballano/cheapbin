@@ -60,10 +60,9 @@ static void print_usage(const char *prog)
         "    space   pause / resume\n"
         "    h / ←   seek backward 5s\n"
         "    l / →   seek forward 5s\n"
-        "    c       cycle sound chip\n"
-        "    s       cycle music style\n"
-        "    k       cycle musical scale\n"
-        "    t       cycle visual theme\n"
+        "    c / C   cycle sound chip (next / prev)\n"
+        "    s / S   cycle music style (next / prev)\n"
+        "    t / T   cycle visual theme (next / prev)\n"
         "    q       quit\n"
         "\n", prog);
 }
@@ -236,16 +235,20 @@ int main(int argc, char *argv[])
                 audio_pause();
             else
                 audio_resume();
-        } else if (key == 'c' || key == 'C') {
+        } else if (key == 'c') {
             synth_set_chip(&synth, chip_next(synth.chip_type));
-        } else if (key == 's' || key == 'S') {
+        } else if (key == 'C') {
+            synth_set_chip(&synth, chip_prev(synth.chip_type));
+        } else if (key == 's') {
             current_style = style_next(current_style);
             synth_apply_style(&synth, current_style, &comp);
-        } else if (key == 'k' || key == 'K') {
-            ScaleType next = scale_next(synth.scale_type);
-            synth_set_scale(&synth, data, size, (int)next, &comp);
-        } else if (key == 't' || key == 'T') {
+        } else if (key == 'S') {
+            current_style = style_prev(current_style);
+            synth_apply_style(&synth, current_style, &comp);
+        } else if (key == 't') {
             display_cycle_theme();
+        } else if (key == 'T') {
+            display_cycle_theme_prev();
         } else if (key == 'l' || key == 'L' || key == KEY_RIGHT) {
             /* 5 seconds at current BPM — composition uses 16th-note ticks. */
             int step = (int)(synth.bpm * 4.0f / 60.0f * 5.0f);
