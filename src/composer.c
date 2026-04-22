@@ -485,7 +485,7 @@ const char *scale_short_name(ScaleType type)
     case SCALE_JAPANESE_IN_SEN:  return "In-Sen";
     case SCALE_HUNGARIAN_MINOR:  return "HunMin";
     case SCALE_DOUBLE_HARMONIC:  return "DblHarm";
-    case SCALE_WHOLE_TONE:       return "Whole Tone";
+    case SCALE_WHOLE_TONE:       return "WholeTn";
     default:                     return "?";
     }
 }
