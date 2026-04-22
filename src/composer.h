@@ -103,6 +103,7 @@ void composition_free(Composition *comp);
 const char *scale_name(ScaleType type);
 const char *scale_short_name(ScaleType type);
 ScaleType   scale_next(ScaleType current);
+ScaleType   scale_prev(ScaleType current);
 int         scale_parse(const char *name);  /* -1 on unknown */
 
 #endif

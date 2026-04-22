@@ -485,7 +485,7 @@ const char *scale_short_name(ScaleType type)
     case SCALE_JAPANESE_IN_SEN:  return "In-Sen";
     case SCALE_HUNGARIAN_MINOR:  return "HunMin";
     case SCALE_DOUBLE_HARMONIC:  return "DblHarm";
-    case SCALE_WHOLE_TONE:       return "WHOLE_TONE";
+    case SCALE_WHOLE_TONE:       return "Whole Tone";
     default:                     return "?";
     }
 }
@@ -495,6 +495,13 @@ ScaleType scale_next(ScaleType current)
     int next = (int)current + 1;
     if (next >= NUM_SCALES) next = 0;
     return (ScaleType)next;
+}
+
+ScaleType scale_prev(ScaleType current)
+{
+    int prev = (int)current - 1;
+    if (prev < 0) prev = NUM_SCALES - 1;
+    return (ScaleType)prev;
 }
 
 int scale_parse(const char *name)

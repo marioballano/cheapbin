@@ -62,6 +62,7 @@ static void print_usage(const char *prog)
         "    l / →   seek forward 5s\n"
         "    c / C   cycle sound chip (next / prev)\n"
         "    s / S   cycle music style (next / prev)\n"
+        "    k / K   cycle musical scale (next / prev)\n"
         "    t / T   cycle visual theme (next / prev)\n"
         "    q       quit\n"
         "\n", prog);
@@ -245,6 +246,12 @@ int main(int argc, char *argv[])
         } else if (key == 'S') {
             current_style = style_prev(current_style);
             synth_apply_style(&synth, current_style, &comp);
+        } else if (key == 'k') {
+            ScaleType next = scale_next(synth.scale_type);
+            synth_set_scale(&synth, data, size, (int)next, &comp);
+        } else if (key == 'K') {
+            ScaleType prev = scale_prev(synth.scale_type);
+            synth_set_scale(&synth, data, size, (int)prev, &comp);
         } else if (key == 't') {
             display_cycle_theme();
         } else if (key == 'T') {
