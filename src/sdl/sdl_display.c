@@ -19,6 +19,15 @@
 static SDL_Window   *s_window;
 static SDL_Renderer *s_renderer;
 static SDL_Texture  *s_font_tex;
+static SDL_GameController *s_controller;
+static SDL_Joystick       *s_joystick;
+static SDL_JoystickID      s_controller_id = -1;
+static SDL_JoystickID      s_joystick_id = -1;
+static bool                s_gamepad_ready;
+static int                 s_ctrl_x_dir;
+static int                 s_ctrl_y_dir;
+static int                 s_joy_x_dir;
+static int                 s_joy_y_dir;
 
 static char     s_filename[256];
 static size_t   s_filesize;
@@ -64,6 +73,166 @@ static int key_pop(void)
     int k = s_keys[s_kq_head];
     s_kq_head = (s_kq_head + 1) % KEY_QUEUE_SIZE;
     return k;
+}
+
+/* -- Gamepad input --------------------------------------------------- */
+
+static int axis_dir(Sint16 value)
+{
+    const Sint16 deadzone = 16000;
+    if (value < -deadzone) return -1;
+    if (value >  deadzone) return  1;
+    return 0;
+}
+
+static void push_axis_motion(Sint16 value, int *state, int neg_key, int pos_key)
+{
+    int dir = axis_dir(value);
+    if (dir == *state) return;
+    *state = dir;
+    if (dir < 0) {
+        key_push(neg_key);
+    } else if (dir > 0) {
+        key_push(pos_key);
+    }
+}
+
+static void gamepad_close(void)
+{
+    if (s_controller) {
+        SDL_GameControllerClose(s_controller);
+        s_controller = NULL;
+    }
+    if (s_joystick) {
+        SDL_JoystickClose(s_joystick);
+        s_joystick = NULL;
+    }
+    s_controller_id = -1;
+    s_joystick_id = -1;
+    s_ctrl_x_dir = s_ctrl_y_dir = 0;
+    s_joy_x_dir = s_joy_y_dir = 0;
+}
+
+static bool gamepad_open_device(int index)
+{
+    SDL_Joystick *joy;
+
+    if (!s_gamepad_ready || s_controller || s_joystick || index < 0) {
+        return false;
+    }
+
+    if (SDL_IsGameController(index)) {
+        s_controller = SDL_GameControllerOpen(index);
+        if (!s_controller) {
+            return false;
+        }
+        joy = SDL_GameControllerGetJoystick(s_controller);
+        s_controller_id = joy ? SDL_JoystickInstanceID(joy) : -1;
+        return true;
+    }
+
+    s_joystick = SDL_JoystickOpen(index);
+    if (!s_joystick) {
+        return false;
+    }
+    s_joystick_id = SDL_JoystickInstanceID(s_joystick);
+    return true;
+}
+
+static void gamepad_open_first(void)
+{
+    int n;
+
+    if (!s_gamepad_ready || s_controller || s_joystick) {
+        return;
+    }
+
+    n = SDL_NumJoysticks();
+    for (int i = 0; i < n; i++) {
+        if (SDL_IsGameController(i) && gamepad_open_device(i)) {
+            return;
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        if (!SDL_IsGameController(i) && gamepad_open_device(i)) {
+            return;
+        }
+    }
+}
+
+static void gamepad_init(void)
+{
+    Uint32 flags = SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK;
+
+    s_gamepad_ready = false;
+    if (SDL_InitSubSystem(flags) != 0) {
+        fprintf(stderr, "warning: SDL_InitSubSystem(GAMECONTROLLER): %s\n",
+                SDL_GetError());
+        return;
+    }
+
+    s_gamepad_ready = true;
+    SDL_GameControllerEventState(SDL_ENABLE);
+    SDL_JoystickEventState(SDL_ENABLE);
+    gamepad_open_first();
+}
+
+static int translate_controller_button(Uint8 button)
+{
+    switch (button) {
+    case SDL_CONTROLLER_BUTTON_A:
+    case SDL_CONTROLLER_BUTTON_START:
+        return ' ';
+    case SDL_CONTROLLER_BUTTON_B:
+    case SDL_CONTROLLER_BUTTON_BACK:
+    case SDL_CONTROLLER_BUTTON_GUIDE:
+        return 'q';
+    case SDL_CONTROLLER_BUTTON_X:
+        return 'c';
+    case SDL_CONTROLLER_BUTTON_Y:
+        return 's';
+    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+        return 'C';
+    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+        return 'S';
+    case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+        return KEY_LEFT;
+    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+        return KEY_RIGHT;
+    case SDL_CONTROLLER_BUTTON_DPAD_UP:
+        return 'K';
+    case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+        return 'k';
+    default:
+        return 0;
+    }
+}
+
+static int translate_joystick_button(Uint8 button)
+{
+    switch (button) {
+    case 0:  return ' ';       /* A */
+    case 1:  return 'q';       /* B */
+    case 2:  return 'c';       /* X */
+    case 3:  return 's';       /* Y */
+    case 4:  return 'C';       /* L */
+    case 5:  return 'S';       /* R */
+    case 6:  return 'q';       /* Select / Back */
+    case 7:  return ' ';       /* Start */
+    case 11: return 'K';       /* Common Linux D-pad up */
+    case 12: return 'k';       /* Common Linux D-pad down */
+    case 13: return KEY_LEFT;  /* Common Linux D-pad left */
+    case 14: return KEY_RIGHT; /* Common Linux D-pad right */
+    default: return 0;
+    }
+}
+
+static void push_hat_motion(Uint8 value)
+{
+    if (value & SDL_HAT_LEFT)  key_push(KEY_LEFT);
+    if (value & SDL_HAT_RIGHT) key_push(KEY_RIGHT);
+    if (value & SDL_HAT_UP)    key_push('K');
+    if (value & SDL_HAT_DOWN)  key_push('k');
 }
 
 /* ── Font texture ──────────────────────────────────────────────────── */
@@ -337,12 +506,13 @@ static void draw_hex_and_disasm(const SynthState *s)
     int label_row  = 17;
     int data_row0  = 18;
     int rows_tall  = 6;
+    const int dis_col = 22;
 
     draw_text(0, label_row,  "HEX",    140, 140, 180);
-    draw_text(22, label_row, "DISASM", 140, 140, 180);
+    draw_text(dis_col, label_row, "DISASM", 140, 140, 180);
 
     BinView *bv = s_bv;
-    enum { BPR = 6, NROWS = 6 };
+    enum { BPR = 6, NROWS = 6, HEX_COL = 6, HEX_STRIDE = 2 };
     const int total = BPR * NROWS;
 
     uint64_t base;
@@ -371,7 +541,7 @@ static void draw_hex_and_disasm(const SynthState *s)
 
         for (int b = 0; b < BPR; b++) {
             size_t idx = (size_t)(r * BPR + b);
-            int col = 6 + b * 3;
+            int col = HEX_COL + b * HEX_STRIDE;
             if (idx < got) {
                 uint8_t v = hbuf[idx];
                 int rr, gg, bb;
@@ -407,7 +577,6 @@ static void draw_hex_and_disasm(const SynthState *s)
     if (pcb == 0) pcb = binview_text_addr(bv);
     int n = binview_disasm(bv, pcb, 6, addrs, lines);
 
-    int dis_col = 22;
     int dis_w   = SDL_COLS - dis_col;
     for (int ln = 0; ln < 6; ln++) {
         int row = data_row0 + ln;
@@ -449,7 +618,7 @@ static void draw_regs(const SynthState *s)
             up[k] = (char)toupper((unsigned char)regs[i].name[k]);
         up[nl] = '\0';
 
-        char rb[12];
+        char rb[16];
         snprintf(rb, sizeof(rb), "%s=%04X",
                  up, (unsigned)(regs[i].value & 0xFFFFu));
         draw_text(col, row, rb, 0, 180, 130);
@@ -480,7 +649,7 @@ static void draw_progress(const SynthState *s)
         fill_pixels(x + i, y, 1, h, r, g, b);
     }
 
-    char pb[8];
+    char pb[16];
     snprintf(pb, sizeof(pb), "%3d%%", pct);
     draw_text(SDL_COLS - 4, row, pb, 200, 200, 220);
 }
@@ -497,7 +666,7 @@ static void draw_status(const SynthState *s)
     }
 
     row = 29;
-    draw_text(0, row, "spc h/l c s k q", 70, 70, 100);
+    draw_text(0, row, "spc/A dpad x/y l/r b", 70, 70, 100);
 }
 
 /* ── Public API ────────────────────────────────────────────────────── */
@@ -543,11 +712,17 @@ int sdl_display_init(const char *filename, size_t filesize, BinView *bv)
     s_frame    = 0;
     s_rng      = (uint32_t)(filesize ^ 0xDEADBEEFu);
     s_kq_head  = s_kq_tail = 0;
+    gamepad_init();
     return 0;
 }
 
 void sdl_display_cleanup(void)
 {
+    gamepad_close();
+    if (s_gamepad_ready) {
+        SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK);
+        s_gamepad_ready = false;
+    }
     if (s_font_tex) { SDL_DestroyTexture(s_font_tex); s_font_tex = NULL; }
     if (s_renderer) { SDL_DestroyRenderer(s_renderer); s_renderer = NULL; }
     if (s_window)   { SDL_DestroyWindow(s_window);    s_window   = NULL; }
@@ -604,6 +779,62 @@ int sdl_display_poll_key(void)
         switch (ev.type) {
         case SDL_QUIT:
             key_push(KEY_QUIT);
+            break;
+        case SDL_CONTROLLERDEVICEADDED:
+            if (!s_controller && !s_joystick) {
+                gamepad_open_device(ev.cdevice.which);
+            }
+            break;
+        case SDL_CONTROLLERDEVICEREMOVED:
+            if (ev.cdevice.which == s_controller_id) {
+                gamepad_close();
+                gamepad_open_first();
+            }
+            break;
+        case SDL_CONTROLLERBUTTONDOWN: {
+            int k = translate_controller_button(ev.cbutton.button);
+            if (k) key_push(k);
+            break;
+        }
+        case SDL_CONTROLLERAXISMOTION:
+            if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
+                push_axis_motion(ev.caxis.value, &s_ctrl_x_dir,
+                                 KEY_LEFT, KEY_RIGHT);
+            } else if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
+                push_axis_motion(ev.caxis.value, &s_ctrl_y_dir, 'K', 'k');
+            }
+            break;
+        case SDL_JOYDEVICEADDED:
+            if (!s_controller && !s_joystick) {
+                gamepad_open_device(ev.jdevice.which);
+            }
+            break;
+        case SDL_JOYDEVICEREMOVED:
+            if (ev.jdevice.which == s_joystick_id) {
+                gamepad_close();
+                gamepad_open_first();
+            }
+            break;
+        case SDL_JOYBUTTONDOWN:
+            if (ev.jbutton.which == s_joystick_id) {
+                int k = translate_joystick_button(ev.jbutton.button);
+                if (k) key_push(k);
+            }
+            break;
+        case SDL_JOYHATMOTION:
+            if (ev.jhat.which == s_joystick_id) {
+                push_hat_motion(ev.jhat.value);
+            }
+            break;
+        case SDL_JOYAXISMOTION:
+            if (ev.jaxis.which == s_joystick_id) {
+                if (ev.jaxis.axis == 0) {
+                    push_axis_motion(ev.jaxis.value, &s_joy_x_dir,
+                                     KEY_LEFT, KEY_RIGHT);
+                } else if (ev.jaxis.axis == 1) {
+                    push_axis_motion(ev.jaxis.value, &s_joy_y_dir, 'K', 'k');
+                }
+            }
             break;
         case SDL_KEYDOWN: {
             int k = translate_keysym(ev.key.keysym);
