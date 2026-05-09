@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Cheapbin
+Comment=Binary-to-chiptune music player
+Exec=./launcher.sh
+Icon=cheapbin
+Terminal=false
+Type=Application
+Categories=Audio;Music;Game;

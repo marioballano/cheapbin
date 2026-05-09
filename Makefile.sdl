@@ -1,0 +1,110 @@
+# Build cheapbin-sdl — the SDL/ALSA front-end for the GKD bubble.
+#
+# Targets:
+#   make -f Makefile.sdl                  # native build (macOS or Linux host)
+#   make -f Makefile.sdl macos            # macOS native (SDL2 audio)
+#   make -f Makefile.sdl linux            # Linux native (ALSA audio)
+#   make -f Makefile.sdl linux-arm64      # cross to aarch64-linux via gcc toolchain
+#   make -f Makefile.sdl linux-arm64-zig  # cross to aarch64-linux via 'zig cc'
+#   make -f Makefile.sdl run              # build native and run with assets/cheapbin.png
+#   make -f Makefile.sdl clean
+#
+# Cross-compile knobs (override on the command line):
+#   ARM64_CC       — aarch64 compiler driver (default: aarch64-linux-gnu-gcc)
+#   ARM64_PKG_CFG  — pkg-config for the cross sysroot
+#   SYSROOT        — sysroot path containing SDL2 + ALSA headers / libs
+#                    (required by the Zig target; the gcc target uses
+#                     ARM64_PKG_CFG instead).
+
+UNAME_S := $(shell uname -s)
+
+OUT     := cheapbin-sdl
+
+# Shared core sources — same as the curses build minus its main+display+themes.
+COMMON_SRC := \
+    src/reader.c \
+    src/analyzer.c \
+    src/composer.c \
+    src/synth.c \
+    src/chipemu.c \
+    src/style.c \
+    src/binview.c
+
+SDL_SRC := \
+    src/sdl/sdl_main.c \
+    src/sdl/sdl_display.c
+
+CFLAGS_BASE := -std=c11 -Wall -Wextra -Wno-unused-parameter -O2
+
+# ── macOS native (host = Apple Silicon or Intel; SDL2 from Homebrew) ───
+SDL_PKG_CFG ?= pkg-config
+mac_CFLAGS  := $(CFLAGS_BASE) $(shell $(SDL_PKG_CFG) --cflags sdl2 2>/dev/null)
+mac_LIBS    := $(shell $(SDL_PKG_CFG) --libs sdl2 2>/dev/null)
+mac_AUDIO   := src/sdl/audio_sdl.c
+# Fallback to canonical Homebrew paths if pkg-config didn't yield anything.
+ifeq ($(strip $(mac_LIBS)),)
+mac_CFLAGS  := $(CFLAGS_BASE) -I/opt/homebrew/include/SDL2 -I/opt/homebrew/include -D_THREAD_SAFE
+mac_LIBS    := -L/opt/homebrew/lib -lSDL2
+endif
+
+# ── Linux native ───────────────────────────────────────────────────────
+lin_CFLAGS := $(CFLAGS_BASE) $(shell pkg-config --cflags sdl2 alsa 2>/dev/null) -D_DEFAULT_SOURCE
+lin_LIBS   := $(shell pkg-config --libs sdl2 alsa 2>/dev/null) -lpthread -lm
+lin_AUDIO  := src/sdl/audio_alsa.c
+
+# ── Cross-compile: aarch64 GNU toolchain on a Linux host ───────────────
+ARM64_CC      ?= aarch64-linux-gnu-gcc
+ARM64_PKG_CFG ?= aarch64-linux-gnu-pkg-config
+arm64_CFLAGS  := $(CFLAGS_BASE) -D_DEFAULT_SOURCE \
+                 $(shell $(ARM64_PKG_CFG) --cflags sdl2 alsa 2>/dev/null)
+arm64_LIBS    := $(shell $(ARM64_PKG_CFG) --libs sdl2 alsa 2>/dev/null) \
+                 -lpthread -lm
+arm64_AUDIO   := src/sdl/audio_alsa.c
+
+# ── Cross-compile via Zig ──────────────────────────────────────────────
+SYSROOT       ?=
+zig_SYSFLAGS  := $(if $(SYSROOT),--sysroot=$(SYSROOT) -I$(SYSROOT)/usr/include/SDL2 -I$(SYSROOT)/usr/include -L$(SYSROOT)/usr/lib/aarch64-linux-gnu -L$(SYSROOT)/usr/lib)
+zig_CFLAGS    := $(CFLAGS_BASE) -D_DEFAULT_SOURCE $(zig_SYSFLAGS)
+zig_LIBS      := -lSDL2 -lasound -lpthread -lm
+
+ifeq ($(UNAME_S),Darwin)
+DEFAULT := macos
+else
+DEFAULT := linux
+endif
+
+.PHONY: all macos linux linux-arm64 linux-arm64-zig run clean
+
+all: $(DEFAULT)
+
+macos:
+	@echo "→ macOS native build"
+	clang $(mac_CFLAGS) $(COMMON_SRC) $(SDL_SRC) $(mac_AUDIO) $(mac_LIBS) -o $(OUT)
+	@echo "✓ built $(OUT)"
+
+linux:
+	@echo "→ Linux native build (SDL2 + ALSA)"
+	$(CC) $(lin_CFLAGS) $(COMMON_SRC) $(SDL_SRC) $(lin_AUDIO) $(lin_LIBS) -o $(OUT)
+	@echo "✓ built $(OUT)"
+
+linux-arm64:
+	@echo "→ Cross-compile aarch64-linux (gnu toolchain)"
+	$(ARM64_CC) $(arm64_CFLAGS) $(COMMON_SRC) $(SDL_SRC) $(arm64_AUDIO) $(arm64_LIBS) -o $(OUT)-aarch64
+	@echo "✓ built $(OUT)-aarch64"
+	@file $(OUT)-aarch64 || true
+
+linux-arm64-zig:
+	@if [ -z "$(SYSROOT)" ]; then \
+	    echo "error: SYSROOT must point to an aarch64-linux sysroot with SDL2 + ALSA"; \
+	    echo "       e.g. make -f Makefile.sdl linux-arm64-zig SYSROOT=/opt/gkd-sysroot"; \
+	    exit 1; \
+	fi
+	@echo "→ Cross-compile aarch64-linux via 'zig cc' (sysroot=$(SYSROOT))"
+	zig cc -target aarch64-linux-gnu $(zig_CFLAGS) $(COMMON_SRC) $(SDL_SRC) src/sdl/audio_alsa.c $(zig_LIBS) -o $(OUT)-aarch64
+	@echo "✓ built $(OUT)-aarch64"
+
+run: $(DEFAULT)
+	./$(OUT) assets/cheapbin.png
+
+clean:
+	rm -f $(OUT) $(OUT)-aarch64
