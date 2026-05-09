@@ -56,6 +56,8 @@ static void print_usage(const char *prog)
         "  c / C    next/prev chip\n"
         "  s / S    next/prev style\n"
         "  k / K    next/prev scale\n"
+        "  gamepad  A/start pause, dpad seek/scale, X/Y chip/style,\n"
+        "           L/R prev chip/style, B/back quit\n"
         "  q / esc  quit\n",
         prog);
 }
