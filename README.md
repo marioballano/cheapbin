@@ -8,7 +8,7 @@ No? Well, you're about to find out anyway.
 
 **cheapbin** turns any binary file into chiptune music. Feed it an executable, a firmware dump, a JPEG, a kernel module — doesn't matter. It reads the bytes, finds the melody hiding inside, and plays it back through your speakers while a hacker terminal UI scrolls fake disassembly at you.
 
-> **macOS & Linux.** Uses Core Audio on macOS, ALSA on Linux. Won't build on Windows.
+> **macOS & Linux.** Uses Core Audio on macOS, ALSA on Linux. Won't build on Windows. An SDL2 frontend also ships for handheld Linux devices such as the **GKD Bubble** — gamepad-driven, 640×480, no terminal required.
 
 It ships with **4 hardware sound chip emulations** — each file plays the same song, but filtered through the character of classic chip hardware:
 
@@ -52,6 +52,52 @@ Needs macOS or Linux, CMake, and a C11 compiler. That's it. No dependencies.
 
 ---
 
+## SDL / Handheld Build
+
+An SDL2 frontend ships alongside the terminal build, targeting 640×480 handheld devices. It reproduces the full cheapbin experience — all chips, styles, scales, and r2 integration — in a graphical window controlled by gamepad or keyboard. Audio goes through ALSA on Linux targets or the SDL2 audio subsystem on macOS.
+
+![cheapbin on GKD Bubble](assets/cheapbin-gkd.jpg)
+
+Build with `Makefile.sdl` instead of CMake. Requires SDL2 and (on Linux) ALSA:
+
+```bash
+# Native macOS or Linux
+make -f Makefile.sdl
+
+# Cross-compile for ARM64 Linux (GKD Bubble and similar handhelds)
+make -f Makefile.sdl linux-arm64
+# Output: cheapbin-sdl-aarch64
+```
+
+### Cross-compile overrides
+
+If the default `pkg-config` doesn't resolve SDL2/ALSA paths or the compiler is named differently, override `ARM64_CC`, `arm64_CFLAGS`, and `arm64_LIBS` on the command line. See [GKD.md](GKD.md) for a detailed cross-compile walkthrough, including sysroot setup and the rationale behind linker flags like `--allow-shlib-undefined`.
+
+### Gamepad controls
+
+| Button | Action |
+|--------|--------|
+| A / Start | pause / resume |
+| D-pad ← / → | seek −5 s / +5 s |
+| D-pad ↑ / ↓ | cycle scale (prev / next) |
+| X | cycle chip (next) |
+| Y | cycle style (next) |
+| L / R | cycle chip prev / style prev |
+| B / Back | quit |
+
+The SDL build accepts both `SDL_GameController`-mapped devices and raw joysticks. Keyboard controls mirror the terminal build; the SDL build has a single unified display — no `t` / theme cycling.
+
+### GKD Bubble installation
+
+```bash
+mount -o remount,rw /
+cp cheapbin-sdl-aarch64 /usr/bin/cheapbin
+cp src/sdl/cheapbin.gxmenu /storage/miniplus/sections/01arcade/08cheapbin
+cp assets/cheapbin-icon.png /storage/miniplus/skins/Default/icons/cheapbin.png
+```
+
+---
+
 ## Use
 
 ```bash
@@ -72,7 +118,7 @@ Needs macOS or Linux, CMake, and a C11 compiler. That's it. No dependencies.
 ./build/cheapbin ~/Downloads/suspicious.pdf
 ```
 
-`space` to pause. `h`/`←` seek back 5 s. `l`/`→` seek forward 5 s. `c` to cycle sound chips. `s` to cycle music styles. `t` to cycle themes. `q` to quit.
+`space` to pause. `h`/`←` seek back 5 s. `l`/`→` seek forward 5 s. `c` to cycle sound chips. `s` to cycle music styles. `k` to cycle musical scales. `t` to cycle themes. `q` to quit.
 
 ---
 
