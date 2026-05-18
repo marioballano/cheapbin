@@ -4,12 +4,7 @@
  */
 
 #include "../audio.h"
-
-#ifdef __APPLE__
-#  include <SDL2/SDL.h>
-#else
-#  include <SDL.h>
-#endif
+#include "sdl_include.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -17,7 +12,6 @@
 #define SDL_AUDIO_BUF_SAMPLES 1024
 
 static SDL_AudioDeviceID s_dev;
-static SynthState       *s_synth;
 static int               s_paused;
 
 static void sdl_audio_callback(void *user, Uint8 *stream, int len)
@@ -33,7 +27,6 @@ static void sdl_audio_callback(void *user, Uint8 *stream, int len)
 
 int audio_init(SynthState *synth)
 {
-    s_synth  = synth;
     s_paused = 0;
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {

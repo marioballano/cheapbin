@@ -1,11 +1,6 @@
 #include "sdl_display.h"
 #include "font8x8.h"
-
-#ifdef __APPLE__
-#  include <SDL2/SDL.h>
-#else
-#  include <SDL.h>
-#endif
+#include "sdl_include.h"
 
 #include <stdio.h>
 #include <string.h>

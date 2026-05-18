@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cheapbin</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #05070a;
+      color: #b8fff0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    body {
+      box-sizing: border-box;
+      display: grid;
+      min-height: 100vh;
+      place-items: center;
+      padding: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      width: min(100%, 640px);
+    }
+
+    canvas {
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border: 1px solid #1ccbb6;
+      box-shadow: 0 0 0 1px #102522, 0 18px 64px rgba(0, 0, 0, 0.45);
+      display: block;
+      height: auto;
+      image-rendering: pixelated;
+      outline: none;
+      width: 100%;
+    }
+
+    #status {
+      color: #7bbeb4;
+      font-size: 13px;
+      margin: 0;
+      min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+    <p id="status" role="status">Loading...</p>
+  </main>
+
+  <script>
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      print: function(text) {
+        console.log(text);
+      },
+      printErr: function(text) {
+        console.error(text);
+      },
+      setStatus: function(text) {
+        var status = document.getElementById('status');
+        if (!status) return;
+        status.textContent = text || '';
+        status.hidden = !text || text === 'Running...';
+      },
+      totalDependencies: 0,
+      monitorRunDependencies: function(left) {
+        this.totalDependencies = Math.max(this.totalDependencies, left);
+        this.setStatus(left ? 'Loading...' : '');
+      }
+    };
+    window.onerror = function() {
+      Module.setStatus('Runtime error. See console.');
+    };
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

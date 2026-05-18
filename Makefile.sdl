@@ -6,6 +6,7 @@
 #   make -f Makefile.sdl linux            # Linux native (ALSA audio)
 #   make -f Makefile.sdl linux-arm64      # cross to aarch64-linux via gcc toolchain
 #   make -f Makefile.sdl linux-arm64-zig  # cross to aarch64-linux via 'zig cc'
+#   make -f Makefile.sdl web              # Emscripten/WebAssembly + SDL2
 #   make -f Makefile.sdl run              # build native and run with assets/cheapbin.png
 #   make -f Makefile.sdl clean
 #
@@ -27,12 +28,20 @@ COMMON_SRC := \
     src/composer.c \
     src/synth.c \
     src/chipemu.c \
-    src/style.c \
-    src/binview.c
+	src/style.c \
+	src/binview.c
 
-SDL_SRC := \
-    src/sdl/sdl_main.c \
+SDL_APP_SRC := \
+	src/sdl/sdl_app.c \
     src/sdl/sdl_display.c
+
+SDL_NATIVE_SRC := \
+	src/sdl/sdl_main.c \
+	$(SDL_APP_SRC)
+
+SDL_WEB_SRC := \
+	src/sdl/sdl_web_main.c \
+	$(SDL_APP_SRC)
 
 CFLAGS_BASE := -std=c11 -Wall -Wextra -Wno-unused-parameter -O2
 
@@ -67,29 +76,43 @@ zig_SYSFLAGS  := $(if $(SYSROOT),--sysroot=$(SYSROOT) -I$(SYSROOT)/usr/include/S
 zig_CFLAGS    := $(CFLAGS_BASE) -D_DEFAULT_SOURCE $(zig_SYSFLAGS)
 zig_LIBS      := -lSDL2 -lasound -lpthread -lm
 
+# ── WebAssembly via Emscripten's SDL2 port ────────────────────────────
+EMCC       ?= emcc
+WEB_DIR    ?= build/web
+WEB_OUT    ?= cheapbin
+WEB_FILE   ?= /bin/df
+WEB_MOUNT  ?= df
+WEB_ARGS   ?= $(WEB_MOUNT)
+WEB_SHELL  ?= src/sdl/web_shell.html
+WEB_PRE_JS := $(WEB_DIR)/$(WEB_OUT)-args.js
+
+web_CFLAGS  := $(CFLAGS_BASE) -DCHEAPBIN_ENABLE_R2=0 -DCHEAPBIN_WEB_DEFAULT_FILE=\"$(WEB_MOUNT)\"
+web_LDFLAGS := -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=0 -sFORCE_FILESYSTEM=1
+web_AUDIO   := src/sdl/audio_sdl.c
+
 ifeq ($(UNAME_S),Darwin)
 DEFAULT := macos
 else
 DEFAULT := linux
 endif
 
-.PHONY: all macos linux linux-arm64 linux-arm64-zig run clean
+.PHONY: all macos linux linux-arm64 linux-arm64-zig web run clean
 
 all: $(DEFAULT)
 
 macos:
 	@echo "→ macOS native build"
-	clang $(mac_CFLAGS) $(COMMON_SRC) $(SDL_SRC) $(mac_AUDIO) $(mac_LIBS) -o $(OUT)
+	clang $(mac_CFLAGS) $(COMMON_SRC) $(SDL_NATIVE_SRC) $(mac_AUDIO) $(mac_LIBS) -o $(OUT)
 	@echo "✓ built $(OUT)"
 
 linux:
 	@echo "→ Linux native build (SDL2 + ALSA)"
-	$(CC) $(lin_CFLAGS) $(COMMON_SRC) $(SDL_SRC) $(lin_AUDIO) $(lin_LIBS) -o $(OUT)
+	$(CC) $(lin_CFLAGS) $(COMMON_SRC) $(SDL_NATIVE_SRC) $(lin_AUDIO) $(lin_LIBS) -o $(OUT)
 	@echo "✓ built $(OUT)"
 
 linux-arm64:
 	@echo "→ Cross-compile aarch64-linux (gnu toolchain)"
-	$(ARM64_CC) $(arm64_CFLAGS) $(COMMON_SRC) $(SDL_SRC) $(arm64_AUDIO) $(arm64_LIBS) -o $(OUT)-aarch64
+	$(ARM64_CC) $(arm64_CFLAGS) $(COMMON_SRC) $(SDL_NATIVE_SRC) $(arm64_AUDIO) $(arm64_LIBS) -o $(OUT)-aarch64
 	@echo "✓ built $(OUT)-aarch64"
 	@file $(OUT)-aarch64 || true
 
@@ -100,11 +123,35 @@ linux-arm64-zig:
 	    exit 1; \
 	fi
 	@echo "→ Cross-compile aarch64-linux via 'zig cc' (sysroot=$(SYSROOT))"
-	zig cc -target aarch64-linux-gnu $(zig_CFLAGS) $(COMMON_SRC) $(SDL_SRC) src/sdl/audio_alsa.c $(zig_LIBS) -o $(OUT)-aarch64
+	zig cc -target aarch64-linux-gnu $(zig_CFLAGS) $(COMMON_SRC) $(SDL_NATIVE_SRC) src/sdl/audio_alsa.c $(zig_LIBS) -o $(OUT)-aarch64
 	@echo "✓ built $(OUT)-aarch64"
+
+web:
+	@mkdir -p "$(WEB_DIR)"
+	@{ \
+	    printf "var Module = typeof Module !== 'undefined' ? Module : {};\n"; \
+	    printf "Module['arguments'] = ["; \
+	    first=1; \
+	    for arg in $(WEB_ARGS); do \
+	        esc=$$(printf '%s' "$$arg" | sed 's/\\/\\\\/g; s/"/\\"/g'); \
+	        if [ "$$first" -eq 0 ]; then printf ","; fi; \
+	        printf "\"%s\"" "$$esc"; \
+	        first=0; \
+	    done; \
+	    printf "];\n"; \
+	} > "$(WEB_PRE_JS)"
+	@echo "→ Emscripten web build (SDL2)"
+	$(EMCC) $(web_CFLAGS) $(COMMON_SRC) $(SDL_WEB_SRC) $(web_AUDIO) \
+	    $(web_LDFLAGS) \
+	    --shell-file "$(WEB_SHELL)" \
+	    --pre-js "$(WEB_PRE_JS)" \
+	    --preload-file "$(WEB_FILE)@$(WEB_MOUNT)" \
+	    -o "$(WEB_DIR)/$(WEB_OUT).html"
+	@echo "✓ built $(WEB_DIR)/$(WEB_OUT).html"
 
 run: $(DEFAULT)
 	./$(OUT) assets/cheapbin.png
 
 clean:
 	rm -f $(OUT) $(OUT)-aarch64
+	rm -rf "$(WEB_DIR)"

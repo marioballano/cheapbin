@@ -3,15 +3,51 @@
 #define USE_FAKE_DISASM
 #include "re_data.h"
 
-#define R2P_ENABLE_DLOPEN 0
-#define R2P_ENABLE_SPAWN  1
-#include "r2pipe.inc.c"
+#ifndef CHEAPBIN_ENABLE_R2
+#  define CHEAPBIN_ENABLE_R2 1
+#endif
+
+#if CHEAPBIN_ENABLE_R2
+#  define R2P_ENABLE_DLOPEN 0
+#  define R2P_ENABLE_SPAWN  1
+#  include "r2pipe.inc.c"
+#else
+typedef struct R2Pipe R2Pipe;
+enum { R2P_SPAWN = 0 };
+static R2Pipe *r2p_open(int mode, const char *file, const char *flags)
+{
+    (void)mode;
+    (void)file;
+    (void)flags;
+    return (R2Pipe *)0;
+}
+static char *r2p_cmd(R2Pipe *r, const char *cmd)
+{
+    (void)r;
+    (void)cmd;
+    return (char *)0;
+}
+static void r2p_close(R2Pipe *r)
+{
+    (void)r;
+}
+#endif
 
 #include <ctype.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if CHEAPBIN_ENABLE_R2
+#  include <signal.h>
+#endif
+
+static void r2_ignore_sigpipe(void)
+{
+#if CHEAPBIN_ENABLE_R2
+    signal(SIGPIPE, SIG_IGN);
+#endif
+}
 
 struct BinView {
     R2Pipe        *r2;
@@ -138,6 +174,13 @@ static void r2_pick_regset(BinView *bv)
     }
 }
 
+static void binview_fake_step(BinView *bv)
+{
+    bv->fake_step++;
+    bv->fake_pc += (bv->fake_step & 7) + 1;
+    bv->fake_disasm_idx = (bv->fake_disasm_idx + 1) % (int)NUM_FAKE_DISASM;
+}
+
 /* ── Public API ─────────────────────────────────────────────────────── */
 
 BinView *binview_open(const char *path, const uint8_t *data, size_t size,
@@ -156,7 +199,7 @@ BinView *binview_open(const char *path, const uint8_t *data, size_t size,
     }
 
     /* Don't die from broken pipes if r2 disappears mid-stream. */
-    signal(SIGPIPE, SIG_IGN);
+    r2_ignore_sigpipe();
 
     /* -0: NUL framing for r2pipe protocol (required)
      * -z: skip string parsing for fast startup
@@ -249,9 +292,7 @@ void binview_step(BinView *bv, uint64_t pc_addr)
 {
     if (!bv) return;
     if (!bv->r2) {
-        bv->fake_step++;
-        bv->fake_pc += (bv->fake_step & 7) + 1;
-        bv->fake_disasm_idx = (bv->fake_disasm_idx + 1) % (int)NUM_FAKE_DISASM;
+        binview_fake_step(bv);
         return;
     }
 

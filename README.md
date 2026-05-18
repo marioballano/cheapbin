@@ -67,7 +67,30 @@ make -f Makefile.sdl
 # Cross-compile for ARM64 Linux (GKD Bubble and similar handhelds)
 make -f Makefile.sdl linux-arm64
 # Output: cheapbin-sdl-aarch64
+
+# Browser/WebAssembly build via Emscripten
+make -f Makefile.sdl web
+# Output: build/web/cheapbin.html
 ```
+
+The web target uses Emscripten's SDL2 port for both video and audio. It
+preloads `WEB_FILE` into the browser filesystem at `WEB_MOUNT` and starts the
+SDL frontend with `WEB_ARGS`, which defaults to the mounted file path. To use a
+different bundled input or startup mode, override those knobs:
+
+```bash
+make -f Makefile.sdl web \
+	WEB_FILE=firmware.bin \
+	WEB_MOUNT=/firmware.bin \
+	WEB_ARGS="--style synthwave /firmware.bin"
+```
+
+Serve the generated files from `build/web` with any local HTTP server, for
+example `python3 -m http.server --directory build/web 8000`, then open
+`http://localhost:8000/cheapbin.html`. Browser builds always use the built-in
+fallback disassembly/register visualizer because they cannot spawn a local
+radare2 process. Some browsers also require a click or key press before audio
+playback is allowed.
 
 ### Cross-compile overrides
 

@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 /* ── Scales (semitone offsets from root) ─────────────────────────────── */
 
